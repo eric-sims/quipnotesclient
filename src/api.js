@@ -1,11 +1,11 @@
 import { mockApiRequest } from './mockApi.js';
 
-const API_URL = process.env.VUE_APP_API_URL;
+const API_URL = import.meta.env.VITE_API_URL;
 
-// When VUE_APP_OFFLINE is set, requests are served by the in-memory mock
+// When VITE_OFFLINE is set, requests are served by the in-memory mock
 // backend (mockApi.js) so the client runs with no server. See the
-// `serve:offline` npm script / .env.offline.
-export const IS_OFFLINE = process.env.VUE_APP_OFFLINE === 'true';
+// `dev:offline` npm script / .env.offline.
+export const IS_OFFLINE = import.meta.env.VITE_OFFLINE === 'true';
 
 export async function apiRequest(method, url, body = null, headers = {}) {
   if (IS_OFFLINE) {

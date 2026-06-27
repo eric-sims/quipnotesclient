@@ -1,7 +1,7 @@
 // Mock backend that mirrors the quipNotes server.
 //
 // Lets the client run with no server: api.js routes here when
-// VUE_APP_OFFLINE is set. Each tile is a "<id>|<word>" string so that
+// VITE_OFFLINE is set. Each tile is a "<id>|<word>" string so that
 // duplicate words stay distinct (WordTile renders word.split("|")[1]).
 // State is persisted to localStorage so it survives page reloads.
 

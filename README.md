@@ -9,13 +9,13 @@ npm install
 
 ### Compiles and hot-reloads for development
 ```
-npm run serve
+npm run dev
 ```
-Talks to the real server at `VUE_APP_API_URL` (see `.env`, default `http://localhost:8081`).
+Talks to the real server at `VITE_API_URL` (see `.env`, default `http://localhost:8081`).
 
 ### Run without a server (offline mode)
 ```
-npm run serve:offline
+npm run dev:offline
 ```
 Routes all API calls to an in-memory mock backend (`src/mockApi.js`) instead of
 `fetch`, so the client runs with no server. Useful for UI work, demos, and
@@ -26,6 +26,7 @@ manual testing. State is persisted to `localStorage` and survives reloads. An
 ```
 npm run build
 ```
+Preview the production build locally with `npm run preview`.
 
 ### Lints and fixes files
 ```
@@ -42,7 +43,7 @@ below cover what's available today and the recommended setup for adding one.
 Use offline mode so you can exercise the full UI without standing up a server:
 
 ```
-npm run serve:offline
+npm run dev:offline
 ```
 
 Then walk the core flows:
@@ -72,11 +73,11 @@ npm run lint
 
 ### Recommended: unit & component tests (not yet set up)
 
-For Vue 3 + Vue CLI, the recommended stack is **Vitest** + **@vue/test-utils**.
+For Vue 3 + Vite, the recommended stack is **Vitest** + **@vue/test-utils**.
 To add it:
 
 ```
-npm install -D vitest @vue/test-utils @vue/vue3-jest jsdom
+npm install -D vitest @vue/test-utils jsdom
 ```
 
 Then add a script to `package.json`:
@@ -117,4 +118,4 @@ Suggested first targets, in priority order:
   a `beforeEach` so cases don't leak into each other.
 
 ## Customize configuration
-See [Configuration Reference](https://cli.vuejs.org/config/).
+See the [Vite Configuration Reference](https://vite.dev/config/).
