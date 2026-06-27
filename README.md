@@ -59,11 +59,19 @@ npm run dev:offline
 
 Then walk the core flows:
 
-- **Set Player ID** → the badge and player ID display appear.
-- **Draw 10 Tiles / Draw 1 Tile** → tiles render; drawing again appends.
-- **Select tiles** → they move to the selected list; removing returns them.
-- **Submit Ransom Note** → submitted tiles disappear from the board.
-- **Reload the page** → drawn tiles persist (localStorage).
+- **Set Player ID** → the badge and "Playing as …" display appear.
+- **Draw** → deals a random 3–12 tiles as cut-out "paper" tiles; drawing again
+  appends.
+- **Tap a pool tile** → it drops into the ordered **note tray** and dims in the
+  pool as "in use"; the live preview shows the assembled sentence.
+- **Reorder** → use the ◀ / ▶ nudges on a tray tile to change word order.
+- **Tap a tray tile** → returns it to the pool. **Clear note** wipes the tray
+  (a long note asks for an inline confirm first).
+- **Submit note** → submitted tiles disappear from the board; a toast confirms.
+- **Reload the page** → Player ID *and* drawn tiles persist (localStorage).
+
+Errors and prompts surface as non-blocking **toasts** (bottom of the screen)
+rather than `alert()` dialogs.
 
 Reset mock state between runs:
 
