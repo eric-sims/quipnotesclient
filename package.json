@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "serve": "vue-cli-service serve",
+    "serve:offline": "vue-cli-service serve --mode offline",
     "build": "vue-cli-service build",
     "lint": "vue-cli-service lint"
   },

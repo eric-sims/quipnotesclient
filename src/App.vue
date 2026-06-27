@@ -1,6 +1,7 @@
 <template>
   <div class="table">
     <h1 class="app-title">quipNotes</h1>
+    <p v-if="isOffline" class="offline-badge">Offline mode — no server</p>
     <PlayerIDInput
         :isDisabled="!!playerID"
         @update-player-id="setPlayerID"
@@ -42,7 +43,7 @@
 import TileContainer from './components/TileContainer.vue';
 import PlayerIDInput from './components/PlayerIdInput.vue';
 import SelectedWords from './components/SelectedWords.vue';
-import {apiRequest} from './api.js'
+import {apiRequest, IS_OFFLINE} from './api.js'
 
 export default {
   name: 'App',
@@ -56,6 +57,7 @@ export default {
       selectedWords: [],
       wordList: [],
       playerID: "",
+      isOffline: IS_OFFLINE,
     };
   },
   methods: {
@@ -172,6 +174,16 @@ export default {
 
 .player-id-display {
   font-weight: bold;
+}
+
+.offline-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  font: 14px Courier;
+  font-weight: bold;
+  color: #fff;
+  background-color: #b8860b;
+  border-radius: 4px;
 }
 
 .gameButton {
