@@ -8,6 +8,7 @@
     <PlayerIDInput :isDisabled="!!playerID" @update-player-id="setPlayerID" />
     <p v-if="playerID" class="player-id-display">
       Playing as <strong>{{ playerID }}</strong>
+      <button class="switch-btn" @click="resetPlayer" title="Switch player / new server session">Switch</button>
     </p>
 
     <div class="controls">
@@ -290,5 +291,25 @@ body {
   margin: 0;
   font-size: 0.85rem;
   color: var(--color-muted);
+}
+
+.switch-btn {
+  margin-left: var(--space-3);
+  padding: 2px var(--space-2);
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-muted);
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  vertical-align: middle;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.switch-btn:hover {
+  color: var(--color-text);
+  border-color: var(--color-muted);
 }
 </style>

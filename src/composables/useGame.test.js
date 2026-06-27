@@ -58,6 +58,20 @@ describe('player identity', () => {
     const game = useGame()
     expect(game.playerID.value).toBe('returning')
   })
+
+  it('resetPlayer clears id, pool, note, and localStorage', async () => {
+    api.getTiles.mockResolvedValue({ words: ['1|foo'] })
+    const game = useGame()
+    await game.setPlayerID('p1')
+    game.addToNote('1')
+
+    game.resetPlayer()
+
+    expect(game.playerID.value).toBe('')
+    expect(game.pool.value).toEqual([])
+    expect(game.noteTiles.value).toEqual([])
+    expect(window.localStorage.getItem('quipnotes.playerId')).toBeNull()
+  })
 })
 
 describe('drawing', () => {
