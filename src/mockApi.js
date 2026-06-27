@@ -47,7 +47,7 @@ let tileCounter = 0;
 function storage() {
   try {
     return typeof window !== "undefined" ? window.localStorage : null;
-  } catch (e) {
+  } catch {
     return null; // localStorage can throw in private-mode / sandboxed contexts
   }
 }
