@@ -35,10 +35,21 @@ npm run lint
 
 ## Testing
 
-This project does not yet have an automated test runner wired up. The sections
-below cover what's available today and the recommended setup for adding one.
+Unit and component tests run on **Vitest** + **@vue/test-utils** (jsdom
+environment). Run them with:
 
-### Manual / exploratory testing (available now)
+```
+npm test          # single run
+npm run test:watch  # watch mode
+```
+
+Tests live next to the code they cover (`src/**/*.test.js`). Current coverage:
+the mock backend contract (`src/mockApi.test.js`), the `apiRequest` offline /
+fetch dispatch (`src/api.test.js`), and all four components. jsdom doesn't
+expose Web Storage here, so `src/test-setup.js` installs a small in-memory
+`localStorage` polyfill that `mockApi.js` persists against.
+
+### Manual / exploratory testing
 
 Use offline mode so you can exercise the full UI without standing up a server:
 
@@ -63,44 +74,13 @@ localStorage.removeItem('quipnotes.mock.v1')
 
 or just use a private/incognito window for a clean slate.
 
-### Linting (available now)
+### Linting
 
 Keep lint green before pushing — CI-style gate for style and obvious errors:
 
 ```
 npm run lint
 ```
-
-### Recommended: unit & component tests (not yet set up)
-
-For Vue 3 + Vite, the recommended stack is **Vitest** + **@vue/test-utils**.
-To add it:
-
-```
-npm install -D vitest @vue/test-utils jsdom
-```
-
-Then add a script to `package.json`:
-
-```json
-"scripts": {
-  "test:unit": "vitest"
-}
-```
-
-Suggested first targets, in priority order:
-
-1. **`src/mockApi.js`** — pure logic with no DOM, the easiest high-value win.
-   Cover: drawing appends N tiles and returns the full set; submitting removes
-   exactly the submitted tiles; tile IDs stay unique; persistence round-trips
-   through a mocked `localStorage`; unknown routes return `404`.
-2. **`src/api.js`** — assert it dispatches to the mock when `IS_OFFLINE` and
-   calls `fetch` otherwise (mock `global.fetch`).
-3. **Components** (`WordTile`, `TileContainer`, `SelectedWords`,
-   `PlayerIdInput`) — mount with `@vue/test-utils`, assert rendering and that
-   the right events (`tile-selected`, `update-player-id`, …) fire on
-   interaction. Note `WordTile` displays `word.split("|")[1]`, so feed it
-   `"<id>|<word>"` strings.
 
 ### Best practices
 
