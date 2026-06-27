@@ -11,35 +11,47 @@
       <button class="switch-btn" @click="resetPlayer" title="Switch player / new server session">Switch</button>
     </p>
 
-    <div class="controls">
-      <button
-        class="game-btn game-btn--ghost"
-        :disabled="!playerID || isDrawing"
-        @click="draw"
-      >
-        {{ isDrawing ? 'Drawing…' : 'Draw' }}
-      </button>
-      <button
-        class="game-btn game-btn--primary"
-        :disabled="!playerID || isSubmitting || noteTiles.length === 0"
-        @click="onSubmit"
-      >
-        {{ isSubmitting ? 'Submitting…' : 'Submit note' }}
-      </button>
-    </div>
-
-    <p v-if="playerID" class="pool-meta">{{ remainingCount }} tiles available</p>
-
-    <TileContainer :tiles="pool" :used-ids="usedIds" @add="addToNote" />
-
-    <NoteTray
-      :tiles="noteTiles"
-      :preview="notePreview"
-      :flash="flash"
-      @remove="removeFromNote"
-      @move="onMove"
-      @clear="clearNote"
+    <!-- Player set but not in a game yet: join by code. -->
+    <GameJoin
+      v-if="playerID && !gameCode"
+      :is-disabled="isJoining"
+      @join="joinGame"
     />
+
+    <!-- In a game: show the bar and the play surface. -->
+    <template v-if="playerID && gameCode">
+      <GameBar :code="gameCode" @leave="leaveGame" />
+
+      <div class="controls">
+        <button
+          class="game-btn game-btn--ghost"
+          :disabled="isDrawing"
+          @click="draw"
+        >
+          {{ isDrawing ? 'Drawing…' : 'Draw' }}
+        </button>
+        <button
+          class="game-btn game-btn--primary"
+          :disabled="isSubmitting || noteTiles.length === 0"
+          @click="onSubmit"
+        >
+          {{ isSubmitting ? 'Submitting…' : 'Submit note' }}
+        </button>
+      </div>
+
+      <p class="pool-meta">{{ remainingCount }} tiles available</p>
+
+      <TileContainer :tiles="pool" :used-ids="usedIds" @add="addToNote" />
+
+      <NoteTray
+        :tiles="noteTiles"
+        :preview="notePreview"
+        :flash="flash"
+        @remove="removeFromNote"
+        @move="onMove"
+        @clear="clearNote"
+      />
+    </template>
 
     <ToastStack :toasts="toasts" @dismiss="dismiss" />
   </div>
@@ -49,6 +61,8 @@
 import { onMounted, ref } from 'vue';
 import TileContainer from './components/TileContainer.vue';
 import PlayerIDInput from './components/PlayerIdInput.vue';
+import GameJoin from './components/GameJoin.vue';
+import GameBar from './components/GameBar.vue';
 import NoteTray from './components/NoteTray.vue';
 import ToastStack from './components/ToastStack.vue';
 import { IS_OFFLINE } from './api.js';
@@ -60,6 +74,8 @@ export default {
   components: {
     TileContainer,
     PlayerIDInput,
+    GameJoin,
+    GameBar,
     NoteTray,
     ToastStack,
   },

@@ -2,25 +2,33 @@ import { ref, computed } from 'vue';
 import { api, ApiError } from '../api.js';
 import { parseTile, formatTile } from '../tiles.js';
 
-// Persist the Player ID so a refresh doesn't drop the session (the mock
-// already persists tiles; without this the id was lost on reload).
+// Persist the Player ID and the joined game code so a refresh doesn't drop the
+// session (the mock already persists tiles).
 const PLAYER_ID_KEY = 'quipnotes.playerId';
+const GAME_CODE_KEY = 'quipnotes.gameCode';
 
 // How many tiles a single Draw deals (inclusive range).
 const DRAW_MIN = 3;
 const DRAW_MAX = 12;
 
-function loadPlayerId() {
+// A valid game code is exactly four digits.
+const CODE_RE = /^\d{4}$/;
+
+function loadKey(key) {
   try {
-    return window.localStorage.getItem(PLAYER_ID_KEY) || '';
+    return window.localStorage.getItem(key) || '';
   } catch {
     return '';
   }
 }
 
-function savePlayerId(id) {
+function saveKey(key, value) {
   try {
-    window.localStorage.setItem(PLAYER_ID_KEY, id);
+    if (value) {
+      window.localStorage.setItem(key, value);
+    } else {
+      window.localStorage.removeItem(key);
+    }
   } catch {
     // localStorage can throw in private-mode / sandboxed contexts; ignore.
   }
@@ -34,9 +42,11 @@ function randomDrawCount() {
 // rules are testable without a DOM. `notify(message, type)` lets the caller
 // surface user-facing messages (toasts) without this layer knowing about UI.
 export function useGame({ notify = () => {} } = {}) {
-  const playerID = ref(loadPlayerId());
+  const playerID = ref(loadKey(PLAYER_ID_KEY));
+  const gameCode = ref(loadKey(GAME_CODE_KEY));
   const pool = ref([]); // every tile the player holds: [{ id, word }]
   const noteIds = ref([]); // ordered tile ids — the order *is* the sentence
+  const isJoining = ref(false);
   const isDrawing = ref(false);
   const isSubmitting = ref(false);
 
@@ -81,50 +91,106 @@ export function useGame({ notify = () => {} } = {}) {
     return true;
   }
 
+  function requireGame() {
+    if (!gameCode.value) {
+      notify('Join a game first.', 'error');
+      return false;
+    }
+    return true;
+  }
+
+  // Centralized error handling: a 404 means the game is gone (the host ended
+  // it), so bounce the player back to the join screen. Otherwise surface the
+  // message unless the caller asked to stay silent.
+  function handleGameError(error, { silent = false } = {}) {
+    if (error instanceof ApiError && error.status === 404 && gameCode.value) {
+      clearGameState();
+      notify('This game has ended.', 'error');
+      return;
+    }
+    if (!silent) notify(messageFor(error), 'error');
+  }
+
+  // Clear everything tied to the current game but keep the player identity.
+  function clearGameState() {
+    gameCode.value = '';
+    saveKey(GAME_CODE_KEY, '');
+    pool.value = [];
+    noteIds.value = [];
+  }
+
   async function refreshTiles({ silent = false } = {}) {
-    if (!playerID.value) return;
+    if (!playerID.value || !gameCode.value) return;
     try {
-      const data = await api.getTiles(playerID.value);
+      const data = await api.getTiles(gameCode.value, playerID.value);
       setPool(data && data.words);
     } catch (error) {
-      if (!silent) notify(messageFor(error), 'error');
+      handleGameError(error, { silent });
     }
   }
 
-  async function setPlayerID(id) {
+  // Set the local player identity. Registration with the server happens on
+  // join (the manager owns game creation), so this is purely local.
+  function setPlayerID(id) {
     const trimmed = String(id).trim();
     if (!trimmed) {
       notify('Enter a Player ID first.', 'error');
       return;
     }
+    playerID.value = trimmed;
+    saveKey(PLAYER_ID_KEY, trimmed);
+  }
+
+  async function joinGame(rawCode) {
+    if (!requirePlayer() || isJoining.value) return;
+    const code = String(rawCode).trim();
+    if (!CODE_RE.test(code)) {
+      notify('Enter a 4-digit game code.', 'error');
+      return;
+    }
+    isJoining.value = true;
     try {
-      await api.createPlayer(trimmed);
-      playerID.value = trimmed;
-      savePlayerId(trimmed);
+      // Verify the game exists for a clear error, then register as a player.
+      await api.getGame(code);
+      await api.joinGame(code, playerID.value);
+      gameCode.value = code;
+      saveKey(GAME_CODE_KEY, code);
       // Pull any tiles this player already holds (e.g. a returning session).
       await refreshTiles({ silent: true });
+      notify(`Joined game ${code}.`, 'success');
     } catch (error) {
-      notify(messageFor(error), 'error');
+      if (error instanceof ApiError && error.status === 404) {
+        notify(`Game ${code} not found.`, 'error');
+      } else {
+        notify(messageFor(error), 'error');
+      }
+    } finally {
+      isJoining.value = false;
     }
   }
 
+  // Leave the current game locally and return to the join screen.
+  function leaveGame() {
+    clearGameState();
+  }
+
   async function draw() {
-    if (!requirePlayer() || isDrawing.value) return;
+    if (!requirePlayer() || !requireGame() || isDrawing.value) return;
     isDrawing.value = true;
     try {
       const count = randomDrawCount();
-      const data = await api.draw(playerID.value, count);
+      const data = await api.draw(gameCode.value, playerID.value, count);
       setPool(data && data.words);
       notify(`Drew ${count} tiles.`, 'success');
     } catch (error) {
-      notify(messageFor(error), 'error');
+      handleGameError(error);
     } finally {
       isDrawing.value = false;
     }
   }
 
   async function submit() {
-    if (!requirePlayer() || isSubmitting.value) return;
+    if (!requirePlayer() || !requireGame() || isSubmitting.value) return;
     if (noteIds.value.length === 0) {
       notify('Add some words to your note first.', 'error');
       return;
@@ -132,14 +198,14 @@ export function useGame({ notify = () => {} } = {}) {
     isSubmitting.value = true;
     try {
       const note = noteTiles.value.map(formatTile);
-      await api.submit(playerID.value, note);
+      await api.submit(gameCode.value, playerID.value, note);
       noteIds.value = [];
       // Re-fetch instead of splicing locally: the server is the source of
       // truth for which tiles remain.
       await refreshTiles({ silent: true });
       notify('Ransom note submitted!', 'success');
     } catch (error) {
-      notify(messageFor(error), 'error');
+      handleGameError(error);
     } finally {
       isSubmitting.value = false;
     }
@@ -178,20 +244,17 @@ export function useGame({ notify = () => {} } = {}) {
 
   // Clear all local state so the user can register with a new server session.
   function resetPlayer() {
-    try {
-      window.localStorage.removeItem(PLAYER_ID_KEY);
-    } catch {
-      // ignore
-    }
+    saveKey(PLAYER_ID_KEY, '');
     playerID.value = '';
-    pool.value = [];
-    noteIds.value = [];
+    clearGameState();
   }
 
   return {
     // state
     playerID,
+    gameCode,
     pool,
+    isJoining,
     isDrawing,
     isSubmitting,
     // derived
@@ -203,6 +266,8 @@ export function useGame({ notify = () => {} } = {}) {
     init,
     setPlayerID,
     resetPlayer,
+    joinGame,
+    leaveGame,
     draw,
     submit,
     addToNote,

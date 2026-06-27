@@ -19,7 +19,7 @@ describe('when VITE_OFFLINE is set', () => {
 
     // Dispatches to the real mock (no fetch involved): a draw comes back
     // with parsed data, proving it never touched the network.
-    const data = await api.draw('1', 2)
+    const data = await api.draw('1234', '1', 2)
     expect(data.words).toHaveLength(2)
   })
 })
@@ -38,9 +38,9 @@ describe('when VITE_OFFLINE is not set', () => {
     const { api, IS_OFFLINE } = await import('./api.js')
     expect(IS_OFFLINE).toBe(false)
 
-    const data = await api.createPlayer('7')
+    const data = await api.joinGame('1234', '7')
     expect(data).toEqual({ id: '7' })
-    expect(fetchMock).toHaveBeenCalledWith('http://api.test/players', {
+    expect(fetchMock).toHaveBeenCalledWith('http://api.test/games/1234/players', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: '7' }),
@@ -58,12 +58,15 @@ describe('when VITE_OFFLINE is not set', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const { api } = await import('./api.js')
-    await api.getTiles('7')
+    await api.getTiles('1234', '7')
 
-    expect(fetchMock).toHaveBeenCalledWith('http://api.test/players/7/tiles', {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://api.test/games/1234/players/7/tiles',
+      {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      }
+    )
   })
 
   it('falls back to the local default when VITE_API_URL is unset', async () => {
@@ -77,10 +80,10 @@ describe('when VITE_OFFLINE is not set', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const { api } = await import('./api.js')
-    await api.getTiles('7')
+    await api.getTiles('1234', '7')
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:8081/players/7/tiles',
+      'http://localhost:8081/games/1234/players/7/tiles',
       expect.any(Object)
     )
   })
@@ -92,17 +95,17 @@ describe('when VITE_OFFLINE is not set', () => {
       'fetch',
       vi.fn().mockResolvedValue({
         ok: false,
-        status: 400,
-        json: async () => ({ error: 'id required' }),
+        status: 404,
+        json: async () => ({ error: 'game 9999 not found' }),
       })
     )
 
     const { api, ApiError } = await import('./api.js')
-    await expect(api.createPlayer('')).rejects.toMatchObject({
-      message: 'id required',
-      status: 400,
+    await expect(api.getGame('9999')).rejects.toMatchObject({
+      message: 'game 9999 not found',
+      status: 404,
     })
-    await expect(api.createPlayer('')).rejects.toBeInstanceOf(ApiError)
+    await expect(api.getGame('9999')).rejects.toBeInstanceOf(ApiError)
   })
 
   it('throws a friendly ApiError when the server is unreachable', async () => {
@@ -111,7 +114,7 @@ describe('when VITE_OFFLINE is not set', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('failed')))
 
     const { api } = await import('./api.js')
-    await expect(api.getTiles('7')).rejects.toMatchObject({
+    await expect(api.getTiles('1234', '7')).rejects.toMatchObject({
       message: 'Cannot reach the server. Is it running?',
       status: 0,
     })
