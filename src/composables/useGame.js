@@ -176,6 +176,18 @@ export function useGame({ notify = () => {} } = {}) {
     await refreshTiles({ silent: true });
   }
 
+  // Clear all local state so the user can register with a new server session.
+  function resetPlayer() {
+    try {
+      window.localStorage.removeItem(PLAYER_ID_KEY);
+    } catch {
+      // ignore
+    }
+    playerID.value = '';
+    pool.value = [];
+    noteIds.value = [];
+  }
+
   return {
     // state
     playerID,
@@ -190,6 +202,7 @@ export function useGame({ notify = () => {} } = {}) {
     // actions
     init,
     setPlayerID,
+    resetPlayer,
     draw,
     submit,
     addToNote,
