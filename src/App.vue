@@ -1,13 +1,11 @@
 <template>
   <div class="table">
-    <h1 style="font: 20px Courier; font-weight: bold;">quipNotes</h1>
+    <h1 class="app-title">quipNotes</h1>
     <PlayerIDInput
         :isDisabled="!!playerID"
         @update-player-id="setPlayerID"
     />
-    <p
-        v-if="playerID"
-        style="font-weight: bold">
+    <p v-if="playerID" class="player-id-display">
       Player ID: {{ playerID }}
     </p>
     <button
@@ -78,13 +76,6 @@ export default {
         alert("Please set up playerID first!");
         return;
       }
-      // fetch("http://192.168.68.56:8081/game/draw", {
-      //   method: "POST",
-      //   body: JSON.stringify({ count: numTiles, id: String(this.playerID) }),
-      //   headers: {
-      //     'Content-Type': 'application/json'
-      //   },
-      // })
       apiRequest("POST", "/game/draw", { count: numTiles, id: String(this.playerID) }, {"Content-Type": "application/json"})
           .then(response => {
             if (!response.ok) {
@@ -116,7 +107,7 @@ export default {
         this.selectedWords.splice(index, 1);
       }
     },
-    removeFromWordsWords(word) {
+    removeFromWordList(word) {
       const index = this.wordList.indexOf(word);
       if (index > -1) {
         this.wordList.splice(index, 1);
@@ -133,18 +124,18 @@ export default {
         return;
       }
 
-      apiRequest("POST", "/game/submit", {id: String(this.playerID), note:this.selectedWords},{'Content-Type': 'application/json'})
+      apiRequest("POST", "/game/submit", {id: String(this.playerID), note: this.selectedWords}, {'Content-Type': 'application/json'})
           .then(response => {
         if (response.ok) {
           console.debug("successfully submitted note");
-          for (const w in this.selectedWords) {
-            this.removeFromWordsWords(w);
+          for (const w of this.selectedWords) {
+            this.removeFromWordList(w);
           }
           this.selectedWords = [];
         }
       }).catch(error => {
         alert(`Error submitting: ${error.message}`);
-      }).finally(this.getTiles)
+      }).finally(() => this.getTiles())
     },
     getTiles() {
       apiRequest("GET", `/players/${this.playerID}/tiles`, null, {'Content-Type': 'application/json'})
@@ -174,11 +165,20 @@ export default {
   margin-top: 60px;
   margin-bottom: 60px;
 }
+.app-title {
+  font: 20px Courier;
+  font-weight: bold;
+}
+
+.player-id-display {
+  font-weight: bold;
+}
+
 .gameButton {
-  width: 200px; /* Set button width in pixels */
-  height: 50px; /* Set button height in pixels */
-  padding: 10px; /* Add padding around text */
-  font-size: 18px; /* Adjust text size within the button */
+  width: 200px;
+  height: 50px;
+  padding: 10px;
+  font-size: 18px;
 }
 
 body {

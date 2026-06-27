@@ -29,9 +29,6 @@ export default {
     removeFromSelectedWords(word) {
       this.$emit("remove-from-selected-words", word);
     },
-    isClicked(word) {
-      return this.selectedWords.includes(word);
-    }
   },
 };
 </script>

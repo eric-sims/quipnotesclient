@@ -1,6 +1,6 @@
 <template>
     <div 
-      :class="['tile', { clicked: this.isClicked }]"
+      :class="['tile', { clicked: isClicked }]"
       @click="toggleClicked"
     >
       {{ displayWord }}

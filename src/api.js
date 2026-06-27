@@ -1,8 +1,5 @@
-// api.js
+const API_URL = process.env.VUE_APP_API_URL;
 
-const API_URL = 'http://localhost:8081'; // Change to your API URL
-
-// Helper function for making HTTP requests
 export async function apiRequest(method, url, body = null, headers = {}) {
   const options = {
     method: method,
