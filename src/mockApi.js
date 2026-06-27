@@ -1,9 +1,12 @@
-// Mock backend that mirrors the quipNotes server.
+// Mock backend that mirrors the quipNotes server's game-scoped, join-only
+// contract. Lets the client run with no server: api.js routes here when
+// VITE_OFFLINE is set. Each tile is a "<id>|<word>" string so that duplicate
+// words stay distinct (WordTile renders word.split("|")[1]).
 //
-// Lets the client run with no server: api.js routes here when
-// VITE_OFFLINE is set. Each tile is a "<id>|<word>" string so that
-// duplicate words stay distinct (WordTile renders word.split("|")[1]).
-// State is persisted to localStorage so it survives page reloads.
+// In offline mode there's no manager to *create* a game, so a game is
+// auto-created the first time any 4-digit code is looked up or joined — that
+// keeps offline play (join -> draw -> submit) meaningful. State is persisted to
+// localStorage so it survives page reloads.
 
 // Curated bank grouped by role so a draw yields material you can actually
 // string into a ransom-note quip (articles + pronouns + verbs + nouns...).
@@ -39,9 +42,10 @@ const WORD_BANK = [
   ...WORD_GROUPS.connectors, ...WORD_GROUPS.connectors,
 ];
 
-const STORAGE_KEY = "quipnotes.mock.v1";
+const STORAGE_KEY = "quipnotes.mock.v2";
 
-let players = new Map();
+// games: Map<code, { players: Map<id, { tiles: string[] }>, submittedNotes: string[] }>
+let games = new Map();
 let tileCounter = 0;
 
 function storage() {
@@ -60,7 +64,15 @@ function load() {
     if (!raw) return;
     const data = JSON.parse(raw);
     tileCounter = data.tileCounter || 0;
-    players = new Map(Object.entries(data.players || {}));
+    games = new Map(
+      Object.entries(data.games || {}).map(([code, game]) => [
+        code,
+        {
+          players: new Map(Object.entries(game.players || {})),
+          submittedNotes: game.submittedNotes || [],
+        },
+      ])
+    );
   } catch (e) {
     console.warn("[mockApi] could not load saved state", e);
   }
@@ -70,9 +82,16 @@ function save() {
   const store = storage();
   if (!store) return;
   try {
+    const serializable = {};
+    for (const [code, game] of games) {
+      serializable[code] = {
+        players: Object.fromEntries(game.players),
+        submittedNotes: game.submittedNotes,
+      };
+    }
     store.setItem(
       STORAGE_KEY,
-      JSON.stringify({ tileCounter, players: Object.fromEntries(players) })
+      JSON.stringify({ tileCounter, games: serializable })
     );
   } catch (e) {
     console.warn("[mockApi] could not save state", e);
@@ -81,11 +100,19 @@ function save() {
 
 load();
 
-function ensurePlayer(id) {
-  if (!players.has(id)) {
-    players.set(id, { tiles: [] });
+// Auto-create the game on first contact (offline has no manager to create it).
+function ensureGame(code) {
+  if (!games.has(code)) {
+    games.set(code, { players: new Map(), submittedNotes: [] });
   }
-  return players.get(id);
+  return games.get(code);
+}
+
+function ensurePlayer(game, id) {
+  if (!game.players.has(id)) {
+    game.players.set(id, { tiles: [] });
+  }
+  return game.players.get(id);
 }
 
 function randomWord() {
@@ -106,58 +133,66 @@ function jsonResponse(data, status = 200) {
   };
 }
 
-const routes = [
-  {
-    method: "POST",
-    match: (url) => url === "/players",
-    handle: (body) => {
-      if (!body || !body.id) return jsonResponse({ error: "id required" }, 400);
-      ensurePlayer(String(body.id));
-      save();
-      return jsonResponse({ id: body.id }, 201);
-    },
-  },
-  {
-    method: "POST",
-    match: (url) => url === "/game/draw",
-    handle: (body) => {
-      const player = ensurePlayer(String(body.id));
-      const count = Number(body.count) || 0;
-      for (let i = 0; i < count; i++) {
-        player.tiles.push(makeTile());
-      }
-      save();
-      return jsonResponse({ words: [...player.tiles] });
-    },
-  },
-  {
-    method: "POST",
-    match: (url) => url === "/game/submit",
-    handle: (body) => {
-      const player = ensurePlayer(String(body.id));
-      const note = new Set(body.note || []);
-      player.tiles = player.tiles.filter((tile) => !note.has(tile));
-      save();
-      return jsonResponse({ ok: true });
-    },
-  },
-  {
-    method: "GET",
-    match: (url) => /^\/players\/[^/]+\/tiles$/.test(url),
-    handle: (_body, url) => {
-      const id = url.split("/")[2];
-      const player = ensurePlayer(id);
-      return jsonResponse({ words: [...player.tiles] });
-    },
-  },
-];
+const GAME_RE = /^\/games\/(\d{4})$/;
+const PLAYERS_RE = /^\/games\/(\d{4})\/players$/;
+const TILES_RE = /^\/games\/(\d{4})\/players\/([^/]+)\/tiles$/;
+const DRAW_RE = /^\/games\/(\d{4})\/draw$/;
+const SUBMIT_RE = /^\/games\/(\d{4})\/submit$/;
 
-// Drop-in replacement for api.js#apiRequest's network call.
+// Drop-in replacement for api.js#rawRequest's network call.
 export async function mockApiRequest(method, url, body = null) {
-  const route = routes.find((r) => r.method === method && r.match(url));
-  if (!route) {
-    console.warn(`[mockApi] unhandled ${method} ${url}`);
-    return jsonResponse({ error: "not found" }, 404);
+  let m;
+
+  // Game info / join validation.
+  if (method === "GET" && (m = url.match(GAME_RE))) {
+    const game = ensureGame(m[1]);
+    save();
+    return jsonResponse({ code: m[1], players: [...game.players.keys()] });
   }
-  return route.handle(body, url);
+
+  // Join a game.
+  if (method === "POST" && (m = url.match(PLAYERS_RE))) {
+    if (!body || !body.id) return jsonResponse({ error: "id required" }, 400);
+    const game = ensureGame(m[1]);
+    ensurePlayer(game, String(body.id));
+    save();
+    return jsonResponse({ id: body.id }, 201);
+  }
+
+  // Draw tiles.
+  if (method === "POST" && (m = url.match(DRAW_RE))) {
+    const game = ensureGame(m[1]);
+    const player = ensurePlayer(game, String(body.id));
+    const count = Number(body.count) || 0;
+    for (let i = 0; i < count; i++) {
+      player.tiles.push(makeTile());
+    }
+    save();
+    return jsonResponse({ words: [...player.tiles] });
+  }
+
+  // Submit a note.
+  if (method === "POST" && (m = url.match(SUBMIT_RE))) {
+    const game = ensureGame(m[1]);
+    const player = ensurePlayer(game, String(body.id));
+    const note = body.note || [];
+    const noteSet = new Set(note);
+    const legible = note
+      .map((tile) => String(tile).split("|")[1])
+      .join(" ");
+    if (legible.trim()) game.submittedNotes.push(legible);
+    player.tiles = player.tiles.filter((tile) => !noteSet.has(tile));
+    save();
+    return jsonResponse({ ok: true });
+  }
+
+  // Get a player's current tiles.
+  if (method === "GET" && (m = url.match(TILES_RE))) {
+    const game = ensureGame(m[1]);
+    const player = ensurePlayer(game, m[2]);
+    return jsonResponse({ words: [...player.tiles] });
+  }
+
+  console.warn(`[mockApi] unhandled ${method} ${url}`);
+  return jsonResponse({ error: "not found" }, 404);
 }

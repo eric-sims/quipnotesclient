@@ -63,13 +63,17 @@ async function request(method, url, body = null) {
   return data;
 }
 
-// The four endpoints that make up the game contract. Each returns parsed
-// JSON (or throws ApiError); no caller should need to touch fetch directly.
+// The game-scoped, join-only contract. The player joins an existing game (the
+// manager creates/ends games) and then draws/submits within it. Each call
+// returns parsed JSON (or throws ApiError); no caller touches fetch directly.
 export const api = {
-  createPlayer: (id) => request('POST', '/players', { id: String(id) }),
-  draw: (id, count) =>
-    request('POST', '/game/draw', { id: String(id), count }),
-  submit: (id, note) =>
-    request('POST', '/game/submit', { id: String(id), note }),
-  getTiles: (id) => request('GET', `/players/${id}/tiles`),
+  getGame: (code) => request('GET', `/games/${code}`),
+  joinGame: (code, id) =>
+    request('POST', `/games/${code}/players`, { id: String(id) }),
+  draw: (code, id, count) =>
+    request('POST', `/games/${code}/draw`, { id: String(id), count }),
+  submit: (code, id, note) =>
+    request('POST', `/games/${code}/submit`, { id: String(id), note }),
+  getTiles: (code, id) =>
+    request('GET', `/games/${code}/players/${id}/tiles`),
 };
