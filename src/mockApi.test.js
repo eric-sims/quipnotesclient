@@ -115,6 +115,46 @@ describe('GET /games/:code/players/:id/tiles', () => {
   })
 })
 
+describe('GET /games/:code/round', () => {
+  it('auto-starts a round with a prompt on first contact', async () => {
+    const api = await freshApi()
+    const data = await (await api('GET', `/games/${CODE}/round`)).json()
+    expect(data.round).toBe(1)
+    expect(typeof data.prompt).toBe('string')
+    expect(data.prompt.length).toBeGreaterThan(0)
+  })
+})
+
+describe('one submission per round', () => {
+  it('rejects a second submit in the same round with 409', async () => {
+    const api = await freshApi()
+    await api('POST', `/games/${CODE}/players`, { id: '1' })
+    const { words } = await (await api('POST', `/games/${CODE}/draw`, { id: '1', count: 4 })).json()
+
+    const first = await api('POST', `/games/${CODE}/submit`, { id: '1', note: [words[0]] })
+    expect(first.ok).toBe(true)
+
+    const second = await api('POST', `/games/${CODE}/submit`, { id: '1', note: [words[1]] })
+    expect(second.status).toBe(409)
+  })
+
+  it('advances to the next prompt once everyone has answered', async () => {
+    const api = await freshApi()
+    await api('POST', `/games/${CODE}/players`, { id: '1' })
+    const before = await (await api('GET', `/games/${CODE}/round`)).json()
+    const { words } = await (await api('POST', `/games/${CODE}/draw`, { id: '1', count: 2 })).json()
+
+    await api('POST', `/games/${CODE}/submit`, { id: '1', note: [words[0]] })
+
+    // The next round poll advances (the sole player has answered).
+    const after = await (await api('GET', `/games/${CODE}/round`)).json()
+    expect(after.round).toBe(before.round + 1)
+    // Submitting is possible again in the new round.
+    const again = await api('POST', `/games/${CODE}/submit`, { id: '1', note: [words[1]] })
+    expect(again.ok).toBe(true)
+  })
+})
+
 describe('unknown routes', () => {
   it('returns 404', async () => {
     const api = await freshApi()
