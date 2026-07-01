@@ -5,22 +5,18 @@
       <p v-if="isOffline" class="offline-badge">Offline mode — no server</p>
     </header>
 
-    <PlayerIDInput :isDisabled="!!playerID" @update-player-id="setPlayerID" />
-    <p v-if="playerID" class="player-id-display">
-      Playing as <strong>{{ playerID }}</strong>
-      <button class="switch-btn" @click="resetPlayer" title="Switch player / new server session">Switch</button>
-    </p>
-
-    <!-- Player set but not in a game yet: join by code. -->
-    <GameJoin
-      v-if="playerID && !gameCode"
-      :is-disabled="isJoining"
-      @join="joinGame"
+    <!-- Onboarding: collect Player ID + game code, then verify by joining. -->
+    <Onboarding
+      v-if="!inGame"
+      :initial-player-id="playerID"
+      :initial-code="gameCode"
+      :is-joining="isJoining"
+      @join="onJoin"
     />
 
-    <!-- In a game: show the bar and the play surface. -->
-    <template v-if="playerID && gameCode">
-      <GameBar :code="gameCode" @leave="leaveGame" />
+    <!-- In a game: show the compact identity bar and the play surface. -->
+    <template v-else>
+      <GameBar :player="playerID" :code="gameCode" @leave="leaveGame" />
 
       <PromptBanner :round="round" :prompt="prompt" />
 
@@ -31,13 +27,6 @@
           @click="draw"
         >
           {{ isDrawing ? 'Drawing…' : 'Draw' }}
-        </button>
-        <button
-          class="game-btn game-btn--primary"
-          :disabled="isSubmitting || noteTiles.length === 0 || round === 0 || hasSubmittedThisRound"
-          @click="onSubmit"
-        >
-          {{ submitLabel }}
         </button>
       </div>
 
@@ -59,6 +48,17 @@
         @move="onMove"
         @clear="clearNote"
       />
+
+      <!-- Submit lives with the note, not next to Draw. -->
+      <div class="submit-row">
+        <button
+          class="game-btn game-btn--primary"
+          :disabled="isSubmitting || noteTiles.length === 0 || round === 0 || hasSubmittedThisRound"
+          @click="onSubmit"
+        >
+          {{ submitLabel }}
+        </button>
+      </div>
     </template>
 
     <ToastStack :toasts="toasts" @dismiss="dismiss" />
@@ -68,8 +68,7 @@
 <script>
 import { onMounted, onUnmounted, computed, ref, watch } from 'vue';
 import TileContainer from './components/TileContainer.vue';
-import PlayerIDInput from './components/PlayerIdInput.vue';
-import GameJoin from './components/GameJoin.vue';
+import Onboarding from './components/OnboardingScreen.vue';
 import GameBar from './components/GameBar.vue';
 import NoteTray from './components/NoteTray.vue';
 import PromptBanner from './components/PromptBanner.vue';
@@ -86,8 +85,7 @@ export default {
   name: 'App',
   components: {
     TileContainer,
-    PlayerIDInput,
-    GameJoin,
+    Onboarding,
     GameBar,
     NoteTray,
     PromptBanner,
@@ -97,6 +95,9 @@ export default {
     const { toasts, notify, dismiss } = useToasts();
     const game = useGame({ notify });
     const flash = ref(false);
+
+    // The play surface is unlocked only once both identity and game are set.
+    const inGame = computed(() => !!game.playerID.value && !!game.gameCode.value);
 
     onMounted(game.init);
 
@@ -136,6 +137,13 @@ export default {
       return 'Submit note';
     });
 
+    // The onboarding screen submits both fields at once: set the local identity,
+    // then join (which verifies the code against the server).
+    async function onJoin({ playerId, code }) {
+      game.setPlayerID(playerId);
+      await game.joinGame(code);
+    }
+
     function onMove({ id, dir }) {
       game.moveTile(id, dir);
     }
@@ -155,7 +163,9 @@ export default {
       toasts,
       dismiss,
       flash,
+      inGame,
       submitLabel,
+      onJoin,
       onMove,
       onSubmit,
       ...game,
@@ -281,11 +291,6 @@ body {
   letter-spacing: 0.04em;
 }
 
-.player-id-display {
-  margin: 0;
-  color: var(--color-muted);
-}
-
 .offline-badge {
   display: inline-block;
   margin: 0;
@@ -304,6 +309,17 @@ body {
   gap: var(--space-3);
   justify-content: center;
   width: 100%;
+}
+
+.submit-row {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin-top: var(--space-3);
+}
+
+.submit-row .game-btn {
+  flex: 1 1 240px;
 }
 
 .game-btn {
@@ -358,25 +374,5 @@ body {
   margin: 0;
   font-size: 0.85rem;
   color: var(--color-muted);
-}
-
-.switch-btn {
-  margin-left: var(--space-3);
-  padding: 2px var(--space-2);
-  font-family: var(--font-ui);
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--color-muted);
-  background: none;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  vertical-align: middle;
-  transition: color 0.15s ease, border-color 0.15s ease;
-}
-
-.switch-btn:hover {
-  color: var(--color-text);
-  border-color: var(--color-muted);
 }
 </style>
