@@ -22,6 +22,8 @@
     <template v-if="playerID && gameCode">
       <GameBar :code="gameCode" @leave="leaveGame" />
 
+      <PromptBanner :round="round" :prompt="prompt" />
+
       <div class="controls">
         <button
           class="game-btn game-btn--ghost"
@@ -32,13 +34,19 @@
         </button>
         <button
           class="game-btn game-btn--primary"
-          :disabled="isSubmitting || noteTiles.length === 0"
+          :disabled="isSubmitting || noteTiles.length === 0 || round === 0 || hasSubmittedThisRound"
           @click="onSubmit"
         >
-          {{ isSubmitting ? 'Submitting…' : 'Submit note' }}
+          {{ submitLabel }}
         </button>
       </div>
 
+      <p v-if="round === 0" class="pool-meta">
+        Waiting for the host to draw a prompt…
+      </p>
+      <p v-else-if="hasSubmittedThisRound" class="pool-meta">
+        Answer submitted — waiting for the next round.
+      </p>
       <p class="pool-meta">{{ remainingCount }} tiles available</p>
 
       <TileContainer :tiles="pool" :used-ids="usedIds" @add="addToNote" />
@@ -58,16 +66,21 @@
 </template>
 
 <script>
-import { onMounted, ref } from 'vue';
+import { onMounted, onUnmounted, computed, ref, watch } from 'vue';
 import TileContainer from './components/TileContainer.vue';
 import PlayerIDInput from './components/PlayerIdInput.vue';
 import GameJoin from './components/GameJoin.vue';
 import GameBar from './components/GameBar.vue';
 import NoteTray from './components/NoteTray.vue';
+import PromptBanner from './components/PromptBanner.vue';
 import ToastStack from './components/ToastStack.vue';
 import { IS_OFFLINE } from './api.js';
+import { createGameSocket } from './socket.js';
 import { useGame } from './composables/useGame.js';
 import { useToasts } from './composables/useToasts.js';
+
+// Offline mode has no server socket, so poll the current round on an interval.
+const OFFLINE_POLL_MS = 1500;
 
 export default {
   name: 'App',
@@ -77,6 +90,7 @@ export default {
     GameJoin,
     GameBar,
     NoteTray,
+    PromptBanner,
     ToastStack,
   },
   setup() {
@@ -85,6 +99,42 @@ export default {
     const flash = ref(false);
 
     onMounted(game.init);
+
+    // --- Round event stream: WebSocket online, poll the mock offline. ---
+    let socket = null;
+    let pollTimer = null;
+
+    function stopStream() {
+      if (socket) {
+        socket.close();
+        socket = null;
+      }
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    }
+
+    function startStream(code) {
+      stopStream();
+      if (!code) return;
+      if (IS_OFFLINE) {
+        game.fetchRound();
+        pollTimer = setInterval(() => game.fetchRound(), OFFLINE_POLL_MS);
+      } else {
+        socket = createGameSocket(code, (evt) => game.handleRoundEvent(evt));
+      }
+    }
+
+    // Follow the joined game: open/close the stream as the code changes.
+    watch(game.gameCode, (code) => startStream(code), { immediate: true });
+    onUnmounted(stopStream);
+
+    const submitLabel = computed(() => {
+      if (game.isSubmitting.value) return 'Submitting…';
+      if (game.hasSubmittedThisRound.value) return 'Answer submitted';
+      return 'Submit note';
+    });
 
     function onMove({ id, dir }) {
       game.moveTile(id, dir);
@@ -105,6 +155,7 @@ export default {
       toasts,
       dismiss,
       flash,
+      submitLabel,
       onMove,
       onSubmit,
       ...game,

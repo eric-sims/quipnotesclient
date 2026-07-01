@@ -18,6 +18,7 @@ vi.mock('../api.js', () => {
       draw: vi.fn(),
       submit: vi.fn(),
       getTiles: vi.fn(),
+      getRound: vi.fn(),
     },
   }
 })
@@ -32,13 +33,18 @@ beforeEach(() => {
   api.draw.mockReset().mockResolvedValue({ words: [] })
   api.submit.mockReset().mockResolvedValue({ ok: true })
   api.getTiles.mockReset().mockResolvedValue({ words: [] })
+  api.getRound.mockReset().mockResolvedValue({ round: 0, prompt: '' })
 })
 
-// Put a game into "joined and playing" state for the action tests.
-function joinedGame(notify) {
+// Put a game into "joined and playing" state for the action tests. By default
+// an active round is set so submit() isn't gated; pass { round: 0 } to test the
+// pre-prompt state.
+function joinedGame(notify, { round = 1, prompt = 'A terrible name for a boat' } = {}) {
   const game = useGame(notify ? { notify } : undefined)
   game.playerID.value = 'p1'
   game.gameCode.value = '1234'
+  game.round.value = round
+  game.prompt.value = prompt
   return game
 }
 
@@ -275,6 +281,89 @@ describe('submitting', () => {
     await game.submit()
     expect(api.submit).not.toHaveBeenCalled()
     expect(notify).toHaveBeenCalledWith(expect.stringContaining('Add some words'), 'error')
+  })
+})
+
+describe('rounds', () => {
+  it('fetches the current round when joining', async () => {
+    api.getRound.mockResolvedValue({ round: 2, prompt: 'A rejected slogan' })
+    const game = useGame()
+    game.playerID.value = 'p1'
+
+    await game.joinGame('1234')
+
+    expect(api.getRound).toHaveBeenCalledWith('1234')
+    expect(game.round.value).toBe(2)
+    expect(game.prompt.value).toBe('A rejected slogan')
+  })
+
+  it('a round_started event sets the prompt and re-enables submitting', () => {
+    const game = joinedGame()
+    game.hasSubmittedThisRound.value = true
+
+    game.handleRoundEvent({ type: 'round_started', round: 3, prompt: 'Next one' })
+
+    expect(game.round.value).toBe(3)
+    expect(game.prompt.value).toBe('Next one')
+    expect(game.hasSubmittedThisRound.value).toBe(false)
+  })
+
+  it('a game_ended event returns to the join screen', () => {
+    const notify = vi.fn()
+    const game = joinedGame(notify)
+    game.handleRoundEvent({ type: 'game_ended' })
+    expect(game.gameCode.value).toBe('')
+    expect(notify).toHaveBeenCalledWith('This game has ended.', 'error')
+  })
+
+  it('refuses to submit before a prompt is drawn', async () => {
+    const notify = vi.fn()
+    const game = joinedGame(notify, { round: 0, prompt: '' })
+    game.pool.value = [{ id: '1', word: 'the' }]
+    game.addToNote('1')
+
+    await game.submit()
+
+    expect(api.submit).not.toHaveBeenCalled()
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('draw a prompt'), 'error')
+  })
+
+  it('refuses a second submission in the same round', async () => {
+    const notify = vi.fn()
+    const game = joinedGame(notify)
+    game.hasSubmittedThisRound.value = true
+    game.pool.value = [{ id: '1', word: 'the' }]
+    game.addToNote('1')
+
+    await game.submit()
+
+    expect(api.submit).not.toHaveBeenCalled()
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('already answered'), 'error')
+  })
+
+  it('marks the round as submitted after a successful submit', async () => {
+    const game = joinedGame()
+    game.pool.value = [{ id: '1', word: 'the' }]
+    game.addToNote('1')
+
+    await game.submit()
+
+    expect(api.submit).toHaveBeenCalled()
+    expect(game.hasSubmittedThisRound.value).toBe(true)
+  })
+
+  it('locks the button (but stays in the game) on a 409 conflict', async () => {
+    api.submit.mockRejectedValue(new ApiError('you already submitted a note this round', 409))
+    const notify = vi.fn()
+    const game = joinedGame(notify)
+    game.pool.value = [{ id: '1', word: 'the' }]
+    game.addToNote('1')
+
+    await game.submit()
+
+    expect(game.hasSubmittedThisRound.value).toBe(true)
+    expect(game.gameCode.value).toBe('1234') // not bounced to join
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('already submitted'), 'error')
   })
 })
 

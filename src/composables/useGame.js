@@ -50,6 +50,12 @@ export function useGame({ notify = () => {} } = {}) {
   const isDrawing = ref(false);
   const isSubmitting = ref(false);
 
+  // Round state. round is 0 until the host draws the first prompt.
+  // hasSubmittedThisRound gates a player to one note per round.
+  const round = ref(0);
+  const prompt = ref('');
+  const hasSubmittedThisRound = ref(false);
+
   // Tiles placed in the note, in order, resolved back to { id, word }.
   const noteTiles = computed(() =>
     noteIds.value
@@ -117,6 +123,41 @@ export function useGame({ notify = () => {} } = {}) {
     saveKey(GAME_CODE_KEY, '');
     pool.value = [];
     noteIds.value = [];
+    round.value = 0;
+    prompt.value = '';
+    hasSubmittedThisRound.value = false;
+  }
+
+  // Pull the current round/prompt from the server. Used on join and, in offline
+  // mode, on a poll interval (the WebSocket handles this online).
+  async function fetchRound({ silent = true } = {}) {
+    if (!gameCode.value) return;
+    try {
+      const data = await api.getRound(gameCode.value);
+      setRound(data && data.round, data && data.prompt);
+    } catch (error) {
+      handleGameError(error, { silent });
+    }
+  }
+
+  // Apply a round snapshot. Advancing to a new round re-enables submission.
+  function setRound(nextRound, nextPrompt) {
+    const r = Number(nextRound) || 0;
+    if (r !== round.value) hasSubmittedThisRound.value = false;
+    round.value = r;
+    prompt.value = nextPrompt || '';
+  }
+
+  // Handle a server event pushed over the WebSocket (see socket.js).
+  function handleRoundEvent(evt) {
+    if (!evt || !evt.type) return;
+    if (evt.type === 'round_started') {
+      setRound(evt.round, evt.prompt);
+    } else if (evt.type === 'game_ended') {
+      clearGameState();
+      notify('This game has ended.', 'error');
+    }
+    // "submission" events are for the host screen; players ignore them.
   }
 
   async function refreshTiles({ silent = false } = {}) {
@@ -155,8 +196,11 @@ export function useGame({ notify = () => {} } = {}) {
       await api.joinGame(code, playerID.value);
       gameCode.value = code;
       saveKey(GAME_CODE_KEY, code);
-      // Pull any tiles this player already holds (e.g. a returning session).
+      hasSubmittedThisRound.value = false;
+      // Pull any tiles this player already holds (e.g. a returning session)
+      // and the current round/prompt so the banner shows immediately.
       await refreshTiles({ silent: true });
+      await fetchRound({ silent: true });
       notify(`Joined game ${code}.`, 'success');
     } catch (error) {
       if (error instanceof ApiError && error.status === 404) {
@@ -191,6 +235,14 @@ export function useGame({ notify = () => {} } = {}) {
 
   async function submit() {
     if (!requirePlayer() || !requireGame() || isSubmitting.value) return;
+    if (round.value === 0) {
+      notify('Wait for the host to draw a prompt.', 'error');
+      return;
+    }
+    if (hasSubmittedThisRound.value) {
+      notify('You already answered this round.', 'error');
+      return;
+    }
     if (noteIds.value.length === 0) {
       notify('Add some words to your note first.', 'error');
       return;
@@ -199,13 +251,22 @@ export function useGame({ notify = () => {} } = {}) {
     try {
       const note = noteTiles.value.map(formatTile);
       await api.submit(gameCode.value, playerID.value, note);
+      hasSubmittedThisRound.value = true;
       noteIds.value = [];
       // Re-fetch instead of splicing locally: the server is the source of
       // truth for which tiles remain.
       await refreshTiles({ silent: true });
       notify('Ransom note submitted!', 'success');
     } catch (error) {
-      handleGameError(error);
+      // 409 = the server rejected the submission as a rule conflict (no active
+      // round / already answered). Surface it and lock the button, but don't
+      // treat it as the game ending.
+      if (error instanceof ApiError && error.status === 409) {
+        hasSubmittedThisRound.value = true;
+        notify(error.message, 'error');
+      } else {
+        handleGameError(error);
+      }
     } finally {
       isSubmitting.value = false;
     }
@@ -257,6 +318,9 @@ export function useGame({ notify = () => {} } = {}) {
     isJoining,
     isDrawing,
     isSubmitting,
+    round,
+    prompt,
+    hasSubmittedThisRound,
     // derived
     noteTiles,
     usedIds,
@@ -275,5 +339,7 @@ export function useGame({ notify = () => {} } = {}) {
     moveTile,
     clearNote,
     refreshTiles,
+    fetchRound,
+    handleRoundEvent,
   };
 }

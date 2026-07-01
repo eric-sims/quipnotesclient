@@ -76,4 +76,6 @@ export const api = {
     request('POST', `/games/${code}/submit`, { id: String(id), note }),
   getTiles: (code, id) =>
     request('GET', `/games/${code}/players/${id}/tiles`),
+  // Current round for the game: { round, prompt } (round 0 before any prompt).
+  getRound: (code) => request('GET', `/games/${code}/round`),
 };
