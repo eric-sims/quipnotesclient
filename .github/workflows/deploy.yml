@@ -1,0 +1,51 @@
+# Build the Vite player client and publish it to GitHub Pages.
+#
+# Pages "Source" for this repo must be set to "GitHub Actions"
+# (Settings -> Pages -> Build and deployment -> Source). The custom domain
+# play.rotcev.com is carried by public/CNAME, so the site serves at the domain
+# root and vite's default base "/" is correct.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [master]
+  # Allow manually re-running the deploy from the Actions tab.
+  workflow_dispatch:
+
+# Least-privilege token scoped to what the Pages deploy needs.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One in-flight deploy at a time; let a newer push finish, don't cancel it.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Guard the deploy: a failing unit test should block a bad build.
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
