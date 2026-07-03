@@ -254,6 +254,48 @@ describe('note construction', () => {
     game.clearNote()
     expect(game.noteTiles.value).toEqual([])
   })
+
+  it('inserts a movable line break that shows up in the preview', () => {
+    const game = gameWithPool()
+    game.addToNote('1')
+    game.addBreak()
+    game.addToNote('2')
+    const entries = game.noteTiles.value
+    expect(entries.map((t) => (t.isBreak ? 'BR' : t.id))).toEqual(['1', 'BR', '2'])
+    expect(game.notePreview.value).toBe('the / secret')
+
+    // A break is nudged and removed by id just like a tile.
+    const breakId = entries[1].id
+    game.moveTile(breakId, -1)
+    expect(game.noteTiles.value.map((t) => (t.isBreak ? 'BR' : t.id))).toEqual([
+      'BR',
+      '1',
+      '2',
+    ])
+    game.removeFromNote(breakId)
+    expect(game.noteTiles.value.every((t) => !t.isBreak)).toBe(true)
+  })
+
+  it('keeps break entries when the pool is refreshed', async () => {
+    // A refresh that still holds both tiles must not drop the break between them.
+    api.getTiles.mockResolvedValue({ words: ['1|the', '2|secret'] })
+    const game = joinedGame(vi.fn())
+    game.pool.value = [
+      { id: '1', word: 'the' },
+      { id: '2', word: 'secret' },
+    ]
+    game.addToNote('1')
+    game.addBreak()
+    game.addToNote('2')
+
+    await game.refreshTiles({ silent: true })
+
+    expect(game.noteTiles.value.map((t) => (t.isBreak ? 'BR' : t.id))).toEqual([
+      '1',
+      'BR',
+      '2',
+    ])
+  })
 })
 
 describe('submitting', () => {
@@ -275,9 +317,35 @@ describe('submitting', () => {
     expect(notify).toHaveBeenCalledWith(expect.stringContaining('submitted'), 'success')
   })
 
+  it('serializes line breaks as the reserved break token', async () => {
+    api.getTiles.mockResolvedValue({ words: [] })
+    const game = joinedGame(vi.fn())
+    game.pool.value = [
+      { id: '1', word: 'the' },
+      { id: '2', word: 'secret' },
+    ]
+    game.addToNote('1')
+    game.addBreak()
+    game.addToNote('2')
+
+    await game.submit()
+
+    expect(api.submit).toHaveBeenCalledWith('1234', 'p1', ['1|the', '\n', '2|secret'])
+  })
+
   it('refuses to submit an empty note', async () => {
     const notify = vi.fn()
     const game = joinedGame(notify)
+    await game.submit()
+    expect(api.submit).not.toHaveBeenCalled()
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('Add some words'), 'error')
+  })
+
+  it('refuses to submit a note that is only line breaks', async () => {
+    const notify = vi.fn()
+    const game = joinedGame(notify)
+    game.addBreak()
+    game.addBreak()
     await game.submit()
     expect(api.submit).not.toHaveBeenCalled()
     expect(notify).toHaveBeenCalledWith(expect.stringContaining('Add some words'), 'error')

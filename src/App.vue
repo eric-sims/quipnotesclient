@@ -47,6 +47,7 @@
         @remove="removeFromNote"
         @move="onMove"
         @clear="clearNote"
+        @add-break="addBreak"
       />
 
       <!-- Submit lives with the note, not next to Draw. -->
