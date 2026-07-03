@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue';
 import { api, ApiError } from '../api.js';
-import { parseTile, formatTile } from '../tiles.js';
+import { parseTile, formatTile, BREAK_TILE, isBreakId, newBreakId } from '../tiles.js';
 
 // Persist the Player ID and the joined game code so a refresh doesn't drop the
 // session (the mock already persists tiles).
@@ -56,19 +56,28 @@ export function useGame({ notify = () => {} } = {}) {
   const prompt = ref('');
   const hasSubmittedThisRound = ref(false);
 
-  // Tiles placed in the note, in order, resolved back to { id, word }.
+  // Entries placed in the note, in order. Real tile ids resolve back to
+  // { id, word }; break ids become { id, isBreak: true } (a line break the
+  // player inserted between clusters).
   const noteTiles = computed(() =>
     noteIds.value
-      .map((id) => pool.value.find((t) => t.id === id))
+      .map((id) =>
+        isBreakId(id) ? { id, isBreak: true } : pool.value.find((t) => t.id === id)
+      )
       .filter(Boolean)
   );
 
   // The set of ids currently in the note, for marking pool tiles "in use".
   const usedIds = computed(() => new Set(noteIds.value));
 
-  // Live one-line preview of the assembled note.
+  // Live one-line preview of the assembled note. Line breaks render as a " / "
+  // separator so the player can see how their clusters split.
   const notePreview = computed(() =>
-    noteTiles.value.map((t) => t.word).join(' ')
+    noteTiles.value
+      .map((t) => (t.isBreak ? '/' : t.word))
+      .join(' ')
+      .replace(/\s*\/\s*/g, ' / ')
+      .trim()
   );
 
   // Tiles still available to place (not yet in the note).
@@ -78,9 +87,10 @@ export function useGame({ notify = () => {} } = {}) {
 
   function setPool(rawTiles) {
     pool.value = (rawTiles || []).map(parseTile);
-    // Drop any note ids whose tiles no longer exist (e.g. after a submit).
+    // Drop any note ids whose tiles no longer exist (e.g. after a submit), but
+    // keep break ids — they aren't tiles and belong to the note layout.
     const live = new Set(pool.value.map((t) => t.id));
-    noteIds.value = noteIds.value.filter((id) => live.has(id));
+    noteIds.value = noteIds.value.filter((id) => isBreakId(id) || live.has(id));
   }
 
   function messageFor(error) {
@@ -243,13 +253,15 @@ export function useGame({ notify = () => {} } = {}) {
       notify('You already answered this round.', 'error');
       return;
     }
-    if (noteIds.value.length === 0) {
+    if (!noteTiles.value.some((t) => !t.isBreak)) {
       notify('Add some words to your note first.', 'error');
       return;
     }
     isSubmitting.value = true;
     try {
-      const note = noteTiles.value.map(formatTile);
+      const note = noteTiles.value.map((t) =>
+        t.isBreak ? BREAK_TILE : formatTile(t)
+      );
       await api.submit(gameCode.value, playerID.value, note);
       hasSubmittedThisRound.value = true;
       noteIds.value = [];
@@ -278,6 +290,13 @@ export function useGame({ notify = () => {} } = {}) {
     if (!noteIds.value.includes(id)) {
       noteIds.value = [...noteIds.value, id];
     }
+  }
+
+  // Insert a line break at the end of the note. It's a movable, removable entry
+  // like any tile (nudged with the same controls) and renders as a new line on
+  // the host's slate.
+  function addBreak() {
+    noteIds.value = [...noteIds.value, newBreakId()];
   }
 
   function removeFromNote(id) {
@@ -335,6 +354,7 @@ export function useGame({ notify = () => {} } = {}) {
     draw,
     submit,
     addToNote,
+    addBreak,
     removeFromNote,
     moveTile,
     clearNote,

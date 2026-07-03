@@ -11,6 +11,8 @@
 // advances to a fresh prompt so solo offline play keeps flowing. State is
 // persisted to localStorage so it survives page reloads.
 
+import { BREAK_TILE } from "./tiles.js";
+
 // Curated bank grouped by role so a draw yields material you can actually
 // string into a ransom-note quip (articles + pronouns + verbs + nouns...).
 const WORD_GROUPS = {
@@ -63,7 +65,7 @@ const STORAGE_KEY = "quipnotes.mock.v2";
 
 // games: Map<code, {
 //   players: Map<id, { tiles: string[] }>,
-//   submittedNotes: string[],
+//   submittedNotes: string[][],   // each note is its ordered token list
 //   round: number,
 //   prompt: string,
 //   submitted: Set<id>,   // players who submitted this round
@@ -73,6 +75,20 @@ let tileCounter = 0;
 
 function randomPrompt() {
   return PROMPT_BANK[Math.floor(Math.random() * PROMPT_BANK.length)];
+}
+
+// Mirror the server: trim leading/trailing line breaks and collapse runs of
+// consecutive breaks to a single one so the host never renders blank lines.
+function normalizeNote(note) {
+  const out = [];
+  for (const token of note) {
+    if (token === BREAK_TILE) {
+      if (out.length === 0 || out[out.length - 1] === BREAK_TILE) continue;
+    }
+    out.push(token);
+  }
+  if (out.length && out[out.length - 1] === BREAK_TILE) out.pop();
+  return out;
 }
 
 function storage() {
@@ -256,13 +272,18 @@ export async function mockApiRequest(method, url, body = null) {
       );
     }
 
+    // A note is the ordered token list: tile keys plus BREAK_TILE markers.
+    // Break tokens carry no tile, so they're skipped when releasing the
+    // player's tiles; the note itself is stored as its token array (mirroring
+    // the server), not flattened to a string.
     const note = body.note || [];
-    const noteSet = new Set(note);
-    const legible = note
-      .map((tile) => String(tile).split("|")[1])
-      .join(" ");
-    if (legible.trim()) game.submittedNotes.push(legible);
-    player.tiles = player.tiles.filter((tile) => !noteSet.has(tile));
+    const tiles = note.filter((token) => token !== BREAK_TILE);
+    if (tiles.length === 0) {
+      return jsonResponse({ error: "no wordTiles found" }, 500);
+    }
+    const tileSet = new Set(tiles);
+    game.submittedNotes.push(normalizeNote(note));
+    player.tiles = player.tiles.filter((tile) => !tileSet.has(tile));
     game.submitted.add(id);
     save();
     return jsonResponse({ ok: true });
