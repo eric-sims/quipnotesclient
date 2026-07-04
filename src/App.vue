@@ -9,7 +9,7 @@
     <Onboarding
       v-if="!inGame"
       :initial-player-id="playerID"
-      :initial-code="gameCode"
+      :initial-code="initialCode"
       :is-joining="isJoining"
       @join="onJoin"
     />
@@ -75,6 +75,7 @@ import NoteTray from './components/NoteTray.vue';
 import PromptBanner from './components/PromptBanner.vue';
 import ToastStack from './components/ToastStack.vue';
 import { IS_OFFLINE } from './api.js';
+import { codeFromUrl } from './urlParams.js';
 import { createGameSocket } from './socket.js';
 import { useGame } from './composables/useGame.js';
 import { useToasts } from './composables/useToasts.js';
@@ -99,6 +100,11 @@ export default {
 
     // The play surface is unlocked only once both identity and game are set.
     const inGame = computed(() => !!game.playerID.value && !!game.gameCode.value);
+
+    // Prefill the join form's code from a scanned QR deep link (?code=1234),
+    // falling back to any persisted code. This only seeds the form field — the
+    // joined-session gameCode ref is untouched, so a scan can't auto-join.
+    const initialCode = computed(() => codeFromUrl() || game.gameCode.value);
 
     onMounted(game.init);
 
@@ -165,6 +171,7 @@ export default {
       dismiss,
       flash,
       inGame,
+      initialCode,
       submitLabel,
       onJoin,
       onMove,
