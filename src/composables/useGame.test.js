@@ -444,8 +444,20 @@ describe('rounds', () => {
 })
 
 describe('judging', () => {
-  // p1 is this round's judge unless a test says otherwise.
+  // p1 is this round's judge unless a test says otherwise. A judge reacts to
+  // round_started by pulling the full round state, so keep the mocked GET
+  // /round consistent with the event (the default {round: 0} would clobber it).
   function judgingGame(notify, { judge = 'p1' } = {}) {
+    api.getRound.mockResolvedValue({
+      round: 1,
+      prompt: 'A terrible name for a boat',
+      judgeId: judge,
+      judgingOpen: false,
+      count: 0,
+      total: 1,
+      favoriteNoteId: 0,
+      winnerId: '',
+    })
     const game = joinedGame(notify)
     game.handleRoundEvent({
       type: 'round_started',
@@ -688,6 +700,35 @@ describe('judging', () => {
     expect(game.judgingOpen.value).toBe(true)
     // The judge's board is re-fetched, flips included.
     expect(game.judgeNotes.value[0].flipped).toBe(true)
+  })
+
+  it('a stale round poll cannot regress judging state set by events', async () => {
+    const game = judgingGame(vi.fn(), { judge: 'p2' })
+    game.handleRoundEvent({ type: 'judging_ready', round: 1 })
+    game.handleRoundEvent({
+      type: 'favorite_picked',
+      round: 1,
+      noteId: 2,
+      winnerId: 'p3',
+    })
+
+    // A poll response captured before those events landed (same round, phase
+    // still "collecting notes") arrives late — it must not roll anything back.
+    api.getRound.mockResolvedValue({
+      round: 1,
+      prompt: 'A terrible name for a boat',
+      judgeId: 'p2',
+      judgingOpen: false,
+      count: 1,
+      total: 2,
+      favoriteNoteId: 0,
+      winnerId: '',
+    })
+    await game.fetchRound()
+
+    expect(game.judgingOpen.value).toBe(true)
+    expect(game.favoriteNoteId.value).toBe(2)
+    expect(game.winnerId.value).toBe('p3')
   })
 
   it('leaving the game clears judging state', () => {

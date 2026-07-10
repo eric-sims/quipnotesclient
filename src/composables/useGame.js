@@ -182,18 +182,28 @@ export function useGame({ notify = () => {} } = {}) {
   // Pull the current round state from the server. Used on join and, in offline
   // mode, on a poll interval (the WebSocket handles this online). Restores the
   // whole judging phase too, so a refreshed judge lands back mid-judging.
+  //
+  // Within a round the judging phase only ever advances, so apply the fields
+  // monotonically: a response captured just before a judging_ready /
+  // favorite_picked event landed must not regress the state that event set.
+  // (setRound already resets everything when the round number changes.)
   async function fetchRound({ silent = true } = {}) {
     if (!gameCode.value) return;
     try {
       const data = await api.getRound(gameCode.value);
       if (!data) return;
       setRound(data.round, data.prompt, data.judgeId);
-      judgingOpen.value = !!data.judgingOpen;
-      submissionCount.value = Number(data.count) || 0;
-      submissionTotal.value = Number(data.total) || 0;
-      favoriteNoteId.value = Number(data.favoriteNoteId) || 0;
-      winnerId.value = data.winnerId || '';
-      if (isJudge.value && judgingOpen.value) {
+      if (data.judgingOpen) judgingOpen.value = true;
+      submissionCount.value = Math.max(
+        submissionCount.value,
+        Number(data.count) || 0
+      );
+      if (Number(data.total)) submissionTotal.value = Number(data.total);
+      if (Number(data.favoriteNoteId)) {
+        favoriteNoteId.value = Number(data.favoriteNoteId);
+      }
+      if (data.winnerId) winnerId.value = data.winnerId;
+      if (isJudge.value && judgingOpen.value && !judgeNotes.value.length) {
         await fetchNotes();
       }
     } catch (error) {
@@ -221,6 +231,10 @@ export function useGame({ notify = () => {} } = {}) {
     switch (evt.type) {
       case 'round_started':
         setRound(evt.round, evt.prompt, evt.judgeId);
+        // The event carries no submission counts; the judge's waiting screen
+        // shows them, so pull the full round state (count/total — and, for a
+        // judge replaced mid-round, any judging already in progress).
+        if (isJudge.value) fetchRound();
         break;
       case 'submission':
         // Live "n of m answered" — shown to the waiting judge.
