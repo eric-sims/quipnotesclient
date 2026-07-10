@@ -163,9 +163,19 @@ export default {
       if (!code) return;
       if (IS_OFFLINE) {
         game.fetchRound();
-        pollTimer = setInterval(() => game.fetchRound(), OFFLINE_POLL_MS);
+        pollTimer = setInterval(() => {
+          // Skip poll ticks while the page is hidden (screen off /
+          // backgrounded); the next visible tick catches back up.
+          if (!document.hidden) game.fetchRound();
+        }, OFFLINE_POLL_MS);
       } else {
-        socket = createGameSocket(code, (evt) => game.handleRoundEvent(evt));
+        socket = createGameSocket(code, (evt) => game.handleRoundEvent(evt), {
+          // The socket can't tell "server briefly down" from "game gone"
+          // (e.g. it ended while this phone was asleep). Probe over HTTP: a
+          // 404 clears the game state, which tears this socket down — instead
+          // of letting a dead game keep the radio busy retrying forever.
+          onUnreachable: () => game.fetchRound(),
+        });
       }
     }
 
