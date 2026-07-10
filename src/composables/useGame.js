@@ -56,6 +56,30 @@ export function useGame({ notify = () => {} } = {}) {
   const prompt = ref('');
   const hasSubmittedThisRound = ref(false);
 
+  // Judging state. Each round the server assigns one player as judge ("" when
+  // the round has none, e.g. fewer than 2 players): the judge doesn't write a
+  // note — they wait for everyone else, then flip the notes over and pick a
+  // favorite, whose author scores a point.
+  const judgeId = ref('');
+  const judgingOpen = ref(false);
+  const submissionCount = ref(0); // notes in so far this round
+  const submissionTotal = ref(0); // players expected to answer (judge excluded)
+  // The note board, fetched when this player judges: [{ id, tokens, flipped }]
+  // in the server's shuffled display order (the same order the host shows).
+  // Tokens stay in wire format here; JudgeNoteCard parses them at its boundary,
+  // mirroring how the host's NoteSlate renders a note.
+  const judgeNotes = ref([]);
+  const favoriteNoteId = ref(0); // 1-based id of the picked note (0 = none yet)
+  const winnerId = ref('');
+  // Briefly true on the winner's own screen after a favorite is picked —
+  // drives the confetti burst.
+  const celebrate = ref(false);
+  let celebrateTimer = null;
+
+  const isJudge = computed(
+    () => !!judgeId.value && judgeId.value === playerID.value
+  );
+
   // Entries placed in the note, in order. Real tile ids resolve back to
   // { id, word }; break ids become { id, isBreak: true } (a line break the
   // player inserted between clusters).
@@ -127,6 +151,21 @@ export function useGame({ notify = () => {} } = {}) {
     if (!silent) notify(messageFor(error), 'error');
   }
 
+  // Reset everything scoped to a single round's judging phase.
+  function resetJudgingState() {
+    judgingOpen.value = false;
+    submissionCount.value = 0;
+    submissionTotal.value = 0;
+    judgeNotes.value = [];
+    favoriteNoteId.value = 0;
+    winnerId.value = '';
+    celebrate.value = false;
+    if (celebrateTimer) {
+      clearTimeout(celebrateTimer);
+      celebrateTimer = null;
+    }
+  }
+
   // Clear everything tied to the current game but keep the player identity.
   function clearGameState() {
     gameCode.value = '';
@@ -136,38 +175,156 @@ export function useGame({ notify = () => {} } = {}) {
     round.value = 0;
     prompt.value = '';
     hasSubmittedThisRound.value = false;
+    judgeId.value = '';
+    resetJudgingState();
   }
 
-  // Pull the current round/prompt from the server. Used on join and, in offline
-  // mode, on a poll interval (the WebSocket handles this online).
+  // Pull the current round state from the server. Used on join and, in offline
+  // mode, on a poll interval (the WebSocket handles this online). Restores the
+  // whole judging phase too, so a refreshed judge lands back mid-judging.
   async function fetchRound({ silent = true } = {}) {
     if (!gameCode.value) return;
     try {
       const data = await api.getRound(gameCode.value);
-      setRound(data && data.round, data && data.prompt);
+      if (!data) return;
+      setRound(data.round, data.prompt, data.judgeId);
+      judgingOpen.value = !!data.judgingOpen;
+      submissionCount.value = Number(data.count) || 0;
+      submissionTotal.value = Number(data.total) || 0;
+      favoriteNoteId.value = Number(data.favoriteNoteId) || 0;
+      winnerId.value = data.winnerId || '';
+      if (isJudge.value && judgingOpen.value) {
+        await fetchNotes();
+      }
     } catch (error) {
       handleGameError(error, { silent });
     }
   }
 
-  // Apply a round snapshot. Advancing to a new round re-enables submission.
-  function setRound(nextRound, nextPrompt) {
+  // Apply a round snapshot. Advancing to a new round re-enables submission and
+  // starts a fresh judging phase; the same round can be re-announced with a new
+  // judge (the previous one left), which must not reset judging progress.
+  function setRound(nextRound, nextPrompt, nextJudge) {
     const r = Number(nextRound) || 0;
-    if (r !== round.value) hasSubmittedThisRound.value = false;
+    if (r !== round.value) {
+      hasSubmittedThisRound.value = false;
+      resetJudgingState();
+    }
     round.value = r;
     prompt.value = nextPrompt || '';
+    judgeId.value = nextJudge || '';
   }
 
   // Handle a server event pushed over the WebSocket (see socket.js).
   function handleRoundEvent(evt) {
     if (!evt || !evt.type) return;
-    if (evt.type === 'round_started') {
-      setRound(evt.round, evt.prompt);
-    } else if (evt.type === 'game_ended') {
-      clearGameState();
-      notify('This game has ended.', 'error');
+    switch (evt.type) {
+      case 'round_started':
+        setRound(evt.round, evt.prompt, evt.judgeId);
+        break;
+      case 'submission':
+        // Live "n of m answered" — shown to the waiting judge.
+        submissionCount.value = Number(evt.count) || 0;
+        submissionTotal.value = Number(evt.total) || 0;
+        break;
+      case 'judging_ready':
+        judgingOpen.value = true;
+        if (isJudge.value) {
+          fetchNotes();
+          notify('All notes are in — start judging!', 'success');
+        }
+        break;
+      case 'note_flipped':
+        markFlipped(evt.noteId);
+        break;
+      case 'favorite_picked':
+        applyFavorite(evt.noteId, evt.winnerId);
+        break;
+      case 'game_ended':
+        clearGameState();
+        notify('This game has ended.', 'error');
+        break;
     }
-    // "submission" events are for the host screen; players ignore them.
+  }
+
+  // Record the round's winner. The winning author's own screen celebrates
+  // (confetti); everyone gets the announcement toast. Idempotent: the judge
+  // applies their pick locally and then receives the same reveal broadcast.
+  function applyFavorite(noteId, winner) {
+    if (favoriteNoteId.value === (Number(noteId) || 0) && winnerId.value === (winner || '')) {
+      return;
+    }
+    favoriteNoteId.value = Number(noteId) || 0;
+    winnerId.value = winner || '';
+    markFlipped(noteId);
+    if (!winner) return;
+    if (winner === playerID.value) {
+      celebrate.value = true;
+      if (celebrateTimer) clearTimeout(celebrateTimer);
+      celebrateTimer = setTimeout(() => (celebrate.value = false), 5000);
+      notify('Your note won this round!', 'success');
+    } else {
+      notify(`${winner}'s note won this round!`, 'success');
+    }
+  }
+
+  function markFlipped(noteId) {
+    const note = judgeNotes.value.find((n) => n.id === Number(noteId));
+    if (note) note.flipped = true;
+  }
+
+  // --- Judge actions ---
+
+  // Fetch the note board (judge only). Notes arrive in the server's shuffled
+  // display order, matching the host screen.
+  async function fetchNotes({ silent = true } = {}) {
+    if (!gameCode.value) return;
+    try {
+      const data = await api.getNotes(gameCode.value);
+      judgeNotes.value = (data && data.notes) || [];
+    } catch (error) {
+      handleGameError(error, { silent });
+    }
+  }
+
+  // The judge's override: start judging before every player has answered
+  // (an AFK player shouldn't stall the round).
+  async function forceJudging() {
+    if (!requireGame() || !isJudge.value) return;
+    try {
+      await api.openJudging(gameCode.value);
+      judgingOpen.value = true;
+      await fetchNotes();
+    } catch (error) {
+      handleGameError(error);
+    }
+  }
+
+  // Turn a note face-up. The server broadcasts note_flipped so the host screen
+  // flips the same card; we also flip locally so the judge isn't waiting on
+  // their own echo.
+  async function flipNote(noteId) {
+    if (!requireGame() || !isJudge.value || !judgingOpen.value) return;
+    try {
+      await api.flipNote(gameCode.value, noteId);
+      markFlipped(noteId);
+    } catch (error) {
+      handleGameError(error);
+    }
+  }
+
+  // Pick the favorite (one per round; the note must be face-up). The reveal
+  // itself arrives for everyone via the favorite_picked broadcast, but apply
+  // it locally too so the judge's screen never lags behind their own tap.
+  async function pickFavorite(noteId) {
+    if (!requireGame() || !isJudge.value || !judgingOpen.value) return;
+    if (favoriteNoteId.value) return; // already picked this round
+    try {
+      const data = await api.pickFavorite(gameCode.value, noteId);
+      applyFavorite(noteId, data && data.winnerId);
+    } catch (error) {
+      handleGameError(error);
+    }
   }
 
   async function refreshTiles({ silent = false } = {}) {
@@ -247,6 +404,14 @@ export function useGame({ notify = () => {} } = {}) {
     if (!requirePlayer() || !requireGame() || isSubmitting.value) return;
     if (round.value === 0) {
       notify('Wait for the host to draw a prompt.', 'error');
+      return;
+    }
+    if (isJudge.value) {
+      notify("You're the judge this round — no note to write.", 'error');
+      return;
+    }
+    if (judgingOpen.value) {
+      notify('Judging has started — submissions are closed this round.', 'error');
       return;
     }
     if (hasSubmittedThisRound.value) {
@@ -340,7 +505,17 @@ export function useGame({ notify = () => {} } = {}) {
     round,
     prompt,
     hasSubmittedThisRound,
+    // judging state
+    judgeId,
+    judgingOpen,
+    submissionCount,
+    submissionTotal,
+    judgeNotes,
+    favoriteNoteId,
+    winnerId,
+    celebrate,
     // derived
+    isJudge,
     noteTiles,
     usedIds,
     notePreview,
@@ -361,5 +536,10 @@ export function useGame({ notify = () => {} } = {}) {
     refreshTiles,
     fetchRound,
     handleRoundEvent,
+    // judge actions
+    fetchNotes,
+    forceJudging,
+    flipNote,
+    pickFavorite,
   };
 }

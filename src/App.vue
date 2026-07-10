@@ -20,47 +20,78 @@
 
       <PromptBanner :round="round" :prompt="prompt" />
 
-      <div class="controls">
-        <button
-          class="game-btn game-btn--ghost"
-          :disabled="isDrawing"
-          @click="draw"
-        >
-          {{ isDrawing ? 'Drawing…' : 'Draw' }}
-        </button>
-      </div>
-
-      <p v-if="round === 0" class="pool-meta">
-        Waiting for the host to draw a prompt…
-      </p>
-      <p v-else-if="hasSubmittedThisRound" class="pool-meta">
-        Answer submitted — waiting for the next round.
-      </p>
-      <p class="pool-meta">{{ remainingCount }} tiles available</p>
-
-      <TileContainer :tiles="pool" :used-ids="usedIds" @add="addToNote" />
-
-      <NoteTray
-        :tiles="noteTiles"
-        :preview="notePreview"
-        :flash="flash"
-        @remove="removeFromNote"
-        @move="onMove"
-        @clear="clearNote"
-        @add-break="addBreak"
+      <!-- Judge mode: this round's judge doesn't write a note — they wait for
+           the others, then flip the notes over and pick a favorite. -->
+      <JudgeView
+        v-if="isJudge"
+        :notes="judgeNotes"
+        :judging-open="judgingOpen"
+        :count="submissionCount"
+        :total="submissionTotal"
+        :favorite-note-id="favoriteNoteId"
+        :winner-id="winnerId"
+        @force="forceJudging"
+        @flip="flipNote"
+        @pick="pickFavorite"
       />
 
-      <!-- Submit lives with the note, not next to Draw. -->
-      <div class="submit-row">
-        <button
-          class="game-btn game-btn--primary"
-          :disabled="isSubmitting || noteTiles.length === 0 || round === 0 || hasSubmittedThisRound"
-          @click="onSubmit"
-        >
-          {{ submitLabel }}
-        </button>
-      </div>
+      <!-- Writing mode: draw tiles, arrange the note, submit. -->
+      <template v-else>
+        <p v-if="judgeId" class="pool-meta pool-meta--judge">
+          {{ judgeId }} is judging this round.
+        </p>
+
+        <div class="controls">
+          <button
+            class="game-btn game-btn--ghost"
+            :disabled="isDrawing"
+            @click="draw"
+          >
+            {{ isDrawing ? 'Drawing…' : 'Draw' }}
+          </button>
+        </div>
+
+        <p v-if="round === 0" class="pool-meta">
+          Waiting for the host to draw a prompt…
+        </p>
+        <p v-else-if="winnerId" class="pool-meta">
+          {{ winnerId }} won this round — waiting for the next prompt.
+        </p>
+        <p v-else-if="judgingOpen" class="pool-meta">
+          Judging has started — watch the host screen!
+        </p>
+        <p v-else-if="hasSubmittedThisRound" class="pool-meta">
+          Answer submitted — waiting for the judge.
+        </p>
+        <p class="pool-meta">{{ remainingCount }} tiles available</p>
+
+        <TileContainer :tiles="pool" :used-ids="usedIds" @add="addToNote" />
+
+        <NoteTray
+          :tiles="noteTiles"
+          :preview="notePreview"
+          :flash="flash"
+          @remove="removeFromNote"
+          @move="onMove"
+          @clear="clearNote"
+          @add-break="addBreak"
+        />
+
+        <!-- Submit lives with the note, not next to Draw. -->
+        <div class="submit-row">
+          <button
+            class="game-btn game-btn--primary"
+            :disabled="isSubmitting || noteTiles.length === 0 || round === 0 || hasSubmittedThisRound || judgingOpen"
+            @click="onSubmit"
+          >
+            {{ submitLabel }}
+          </button>
+        </div>
+      </template>
     </template>
+
+    <!-- Confetti on the winner's own screen when their note is picked. -->
+    <ConfettiBurst v-if="celebrate" />
 
     <ToastStack :toasts="toasts" @dismiss="dismiss" />
   </div>
@@ -74,6 +105,8 @@ import GameBar from './components/GameBar.vue';
 import NoteTray from './components/NoteTray.vue';
 import PromptBanner from './components/PromptBanner.vue';
 import ToastStack from './components/ToastStack.vue';
+import JudgeView from './components/JudgeView.vue';
+import ConfettiBurst from './components/ConfettiBurst.vue';
 import { IS_OFFLINE } from './api.js';
 import { codeFromUrl } from './urlParams.js';
 import { createGameSocket } from './socket.js';
@@ -92,6 +125,8 @@ export default {
     NoteTray,
     PromptBanner,
     ToastStack,
+    JudgeView,
+    ConfettiBurst,
   },
   setup() {
     const { toasts, notify, dismiss } = useToasts();
@@ -141,6 +176,7 @@ export default {
     const submitLabel = computed(() => {
       if (game.isSubmitting.value) return 'Submitting…';
       if (game.hasSubmittedThisRound.value) return 'Answer submitted';
+      if (game.judgingOpen.value) return 'Judging in progress';
       return 'Submit note';
     });
 
@@ -382,5 +418,13 @@ body {
   margin: 0;
   font-size: 0.85rem;
   color: var(--color-muted);
+}
+
+/* Who's judging — slightly louder than the other meta lines so players know
+   whose favor they're writing for. */
+.pool-meta--judge {
+  font-family: var(--font-tile);
+  font-weight: 700;
+  color: var(--color-text);
 }
 </style>
