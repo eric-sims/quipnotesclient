@@ -244,7 +244,10 @@ export async function mockApiRequest(method, url, body = null) {
   }
 
   // Current round. Offline has no host, so once every joined player has answered
-  // we auto-advance to the next prompt here to keep solo play flowing.
+  // we auto-advance to the next prompt here to keep solo play flowing. Offline
+  // rounds are always judge-less (there's no room of players to judge), so the
+  // judging fields mirror the server's judge-less shape: play works exactly as
+  // it did before judging existed, and judge mode never activates offline.
   if (method === "GET" && (m = url.match(ROUND_RE))) {
     const game = ensureGame(m[1]);
     if (
@@ -255,7 +258,16 @@ export async function mockApiRequest(method, url, body = null) {
       advanceRound(game);
     }
     save();
-    return jsonResponse({ round: game.round, prompt: game.prompt });
+    return jsonResponse({
+      round: game.round,
+      prompt: game.prompt,
+      judgeId: "",
+      judgingOpen: false,
+      count: game.submitted.size,
+      total: game.players.size,
+      favoriteNoteId: 0,
+      winnerId: "",
+    });
   }
 
   // Submit a note.

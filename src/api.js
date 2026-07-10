@@ -76,6 +76,22 @@ export const api = {
     request('POST', `/games/${code}/submit`, { id: String(id), note }),
   getTiles: (code, id) =>
     request('GET', `/games/${code}/players/${id}/tiles`),
-  // Current round for the game: { round, prompt } (round 0 before any prompt).
+  // Current round for the game: the full round state { round, prompt, judgeId,
+  // judgingOpen, count, total, favoriteNoteId, winnerId } (round 0 before any
+  // prompt).
   getRound: (code) => request('GET', `/games/${code}/round`),
+  // --- Judge actions (used only by the round's judge) ---
+  // The note board: { notes: [{ id, tokens, flipped }] } in the same shuffled
+  // order every screen sees. Note ids are 1-based and stable for the round.
+  getNotes: (code) => request('GET', `/games/${code}/submitted-notes`),
+  // Force judging open before every player has answered (it opens
+  // automatically when the last one submits).
+  openJudging: (code) => request('POST', `/games/${code}/judging`),
+  // Turn a note face-up. One-way; the server broadcasts note_flipped so the
+  // host screen flips the same card.
+  flipNote: (code, noteId) =>
+    request('POST', `/games/${code}/notes/${noteId}/flip`),
+  // Pick the round's favorite note: { winnerId }. Its author scores a point.
+  pickFavorite: (code, noteId) =>
+    request('POST', `/games/${code}/favorite`, { noteId }),
 };
