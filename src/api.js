@@ -80,6 +80,13 @@ export const api = {
   // judgingOpen, count, total, favoriteNoteId, winnerId } (round 0 before any
   // prompt).
   getRound: (code) => request('GET', `/games/${code}/round`),
+  // Advance to the next prompt from a phone (so a game can run without the
+  // host after creating it). `round` is the round being advanced *from*: the
+  // server 409s a stale value (someone advanced first) instead of skipping a
+  // prompt, and — while the round has a judge — only the judge may advance.
+  // Returns the new RoundState.
+  nextRound: (code, id, round) =>
+    request('POST', `/games/${code}/rounds`, { id: String(id), round }),
   // --- Judge actions (used only by the round's judge) ---
   // The note board: { notes: [{ id, tokens, flipped }] } in the same shuffled
   // order every screen sees. Note ids are 1-based and stable for the round.

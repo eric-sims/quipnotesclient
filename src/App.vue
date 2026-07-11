@@ -30,9 +30,12 @@
         :total="submissionTotal"
         :favorite-note-id="favoriteNoteId"
         :winner-id="winnerId"
+        :can-advance="canStartNextRound"
+        :advancing="isAdvancing"
         @force="forceJudging"
         @flip="flipNote"
         @pick="pickFavorite"
+        @next="startNextRound"
       />
 
       <!-- Writing mode: draw tiles, arrange the note, submit. -->
@@ -52,10 +55,10 @@
         </div>
 
         <p v-if="round === 0" class="pool-meta">
-          Waiting for the host to draw a prompt…
+          No prompt yet — start the first round once everyone has joined.
         </p>
         <p v-else-if="winnerId" class="pool-meta">
-          {{ winnerId }} won this round — waiting for the next prompt.
+          {{ winnerId }} won this round — {{ judgeId }} starts the next one.
         </p>
         <p v-else-if="judgingOpen" class="pool-meta">
           Judging has started — watch the host screen!
@@ -64,6 +67,20 @@
           Answer submitted — waiting for the judge.
         </p>
         <p class="pool-meta">{{ remainingCount }} tiles available</p>
+
+        <!-- Advance from the phone so the host screen can be left alone:
+             anyone may kick off the first round; a judge-less round (solo /
+             offline play) moves on once this player has answered. During a
+             judged round the button lives on the judge's screen instead. -->
+        <div v-if="canStartNextRound" class="controls">
+          <button
+            class="game-btn game-btn--primary"
+            :disabled="isAdvancing"
+            @click="startNextRound"
+          >
+            {{ nextRoundLabel }}
+          </button>
+        </div>
 
         <TileContainer :tiles="pool" :used-ids="usedIds" @add="addToNote" />
 
@@ -183,6 +200,11 @@ export default {
     watch(game.gameCode, (code) => startStream(code), { immediate: true });
     onUnmounted(stopStream);
 
+    const nextRoundLabel = computed(() => {
+      if (game.isAdvancing.value) return 'Starting…';
+      return game.round.value === 0 ? 'Start the first round' : 'Next round';
+    });
+
     const submitLabel = computed(() => {
       if (game.isSubmitting.value) return 'Submitting…';
       if (game.hasSubmittedThisRound.value) return 'Answer submitted';
@@ -219,6 +241,7 @@ export default {
       inGame,
       initialCode,
       submitLabel,
+      nextRoundLabel,
       onJoin,
       onMove,
       onSubmit,

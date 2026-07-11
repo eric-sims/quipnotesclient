@@ -49,6 +49,7 @@ export function useGame({ notify = () => {} } = {}) {
   const isJoining = ref(false);
   const isDrawing = ref(false);
   const isSubmitting = ref(false);
+  const isAdvancing = ref(false);
 
   // Round state. round is 0 until the host draws the first prompt.
   // hasSubmittedThisRound gates a player to one note per round.
@@ -79,6 +80,20 @@ export function useGame({ notify = () => {} } = {}) {
   const isJudge = computed(
     () => !!judgeId.value && judgeId.value === playerID.value
   );
+
+  // Whether this player may start the next round from their phone — the game
+  // is meant to run without the host after creating it. Mirrors the server's
+  // AdvanceRound rules, narrowed so exactly one screen shows the button:
+  // before the first prompt anyone may kick the game off; a judged round
+  // belongs to the judge, and only once they've picked (so the reveal isn't
+  // skipped); a judge-less round (solo play / offline) unlocks after
+  // submitting.
+  const canStartNextRound = computed(() => {
+    if (!gameCode.value) return false;
+    if (round.value === 0) return true;
+    if (judgeId.value) return isJudge.value && !!winnerId.value;
+    return hasSubmittedThisRound.value;
+  });
 
   // Entries placed in the note, in order. Real tile ids resolve back to
   // { id, word }; break ids become { id, isBreak: true } (a line break the
@@ -341,6 +356,34 @@ export function useGame({ notify = () => {} } = {}) {
     }
   }
 
+  // Start the next round from this phone (see canStartNextRound for who may).
+  // The server re-checks everything and 409s a request that lost a race (or
+  // came from a non-judge), so a stray tap surfaces a toast and re-syncs
+  // rather than skipping a prompt. Everyone else learns of the new round via
+  // the round_started broadcast; we apply the response locally too so the
+  // tapping player's screen never lags behind their own tap.
+  async function startNextRound() {
+    if (!requirePlayer() || !requireGame() || isAdvancing.value) return;
+    isAdvancing.value = true;
+    try {
+      const state = await api.nextRound(
+        gameCode.value,
+        playerID.value,
+        round.value
+      );
+      if (state) setRound(state.round, state.prompt, state.judgeId);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        notify(error.message, 'error');
+        await fetchRound({ silent: true }); // someone else advanced — catch up
+      } else {
+        handleGameError(error);
+      }
+    } finally {
+      isAdvancing.value = false;
+    }
+  }
+
   async function refreshTiles({ silent = false } = {}) {
     if (!playerID.value || !gameCode.value) return;
     try {
@@ -417,7 +460,7 @@ export function useGame({ notify = () => {} } = {}) {
   async function submit() {
     if (!requirePlayer() || !requireGame() || isSubmitting.value) return;
     if (round.value === 0) {
-      notify('Wait for the host to draw a prompt.', 'error');
+      notify('Wait for the first round to start.', 'error');
       return;
     }
     if (isJudge.value) {
@@ -516,6 +559,7 @@ export function useGame({ notify = () => {} } = {}) {
     isJoining,
     isDrawing,
     isSubmitting,
+    isAdvancing,
     round,
     prompt,
     hasSubmittedThisRound,
@@ -530,6 +574,7 @@ export function useGame({ notify = () => {} } = {}) {
     celebrate,
     // derived
     isJudge,
+    canStartNextRound,
     noteTiles,
     usedIds,
     notePreview,
@@ -549,6 +594,7 @@ export function useGame({ notify = () => {} } = {}) {
     clearNote,
     refreshTiles,
     fetchRound,
+    startNextRound,
     handleRoundEvent,
     // judge actions
     fetchNotes,
