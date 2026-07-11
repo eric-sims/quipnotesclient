@@ -5,7 +5,7 @@
       <p class="prompt-banner__text">{{ prompt }}</p>
     </template>
     <p v-else class="prompt-banner__waiting">
-      Waiting for the host to draw a prompt…
+      No prompt yet — waiting for the first round…
     </p>
   </div>
 </template>

@@ -19,6 +19,7 @@ vi.mock('../api.js', () => {
       submit: vi.fn(),
       getTiles: vi.fn(),
       getRound: vi.fn(),
+      nextRound: vi.fn(),
       getNotes: vi.fn(),
       openJudging: vi.fn(),
       flipNote: vi.fn(),
@@ -38,6 +39,7 @@ beforeEach(() => {
   api.submit.mockReset().mockResolvedValue({ ok: true })
   api.getTiles.mockReset().mockResolvedValue({ words: [] })
   api.getRound.mockReset().mockResolvedValue({ round: 0, prompt: '' })
+  api.nextRound.mockReset().mockResolvedValue({ round: 2, prompt: 'Next prompt', judgeId: '' })
   api.getNotes.mockReset().mockResolvedValue({ notes: [] })
   api.openJudging.mockReset().mockResolvedValue(null)
   api.flipNote.mockReset().mockResolvedValue(null)
@@ -738,6 +740,87 @@ describe('judging', () => {
     expect(game.judgeId.value).toBe('')
     expect(game.judgingOpen.value).toBe(false)
     expect(game.judgeNotes.value).toEqual([])
+  })
+})
+
+describe('advancing rounds from the phone', () => {
+  // Mirror the server's AdvanceRound gating: the button belongs to exactly one
+  // screen at a time (see canStartNextRound in useGame.js).
+  it('anyone may start the first round (round 0)', () => {
+    const game = joinedGame(vi.fn(), { round: 0, prompt: '' })
+    expect(game.canStartNextRound.value).toBe(true)
+  })
+
+  it('a judged round belongs to the judge, and only after their pick', () => {
+    const game = joinedGame(vi.fn())
+    game.judgeId.value = 'p1' // this player judges
+    expect(game.canStartNextRound.value).toBe(false) // no favorite yet
+    game.winnerId.value = 'p2'
+    expect(game.canStartNextRound.value).toBe(true)
+  })
+
+  it('non-judges never get the button in a judged round', () => {
+    const game = joinedGame(vi.fn())
+    game.judgeId.value = 'p2'
+    game.winnerId.value = 'p3'
+    game.hasSubmittedThisRound.value = true
+    expect(game.canStartNextRound.value).toBe(false)
+  })
+
+  it('a judge-less round unlocks once this player has answered', () => {
+    const game = joinedGame(vi.fn())
+    expect(game.canStartNextRound.value).toBe(false)
+    game.hasSubmittedThisRound.value = true
+    expect(game.canStartNextRound.value).toBe(true)
+  })
+
+  it('startNextRound sends the current round and applies the new state', async () => {
+    const game = joinedGame(vi.fn())
+    game.hasSubmittedThisRound.value = true
+    api.nextRound.mockResolvedValue({ round: 2, prompt: 'Fresh prompt', judgeId: 'p2' })
+
+    await game.startNextRound()
+
+    expect(api.nextRound).toHaveBeenCalledWith('1234', 'p1', 1)
+    expect(game.round.value).toBe(2)
+    expect(game.prompt.value).toBe('Fresh prompt')
+    expect(game.judgeId.value).toBe('p2')
+    // A new round re-opens submissions.
+    expect(game.hasSubmittedThisRound.value).toBe(false)
+  })
+
+  it('a 409 (lost the race) surfaces a toast and re-syncs the round', async () => {
+    const notify = vi.fn()
+    const game = joinedGame(notify)
+    api.nextRound.mockRejectedValue(
+      new ApiError('the next round has already started', 409)
+    )
+    api.getRound.mockResolvedValue({
+      round: 2,
+      prompt: 'Someone else drew this',
+      judgeId: '',
+    })
+
+    await game.startNextRound()
+
+    expect(notify).toHaveBeenCalledWith(
+      'the next round has already started',
+      'error'
+    )
+    // Caught up to the round the other tap started.
+    expect(game.round.value).toBe(2)
+    expect(game.prompt.value).toBe('Someone else drew this')
+  })
+
+  it('a 404 means the game ended — back to the join screen', async () => {
+    const notify = vi.fn()
+    const game = joinedGame(notify)
+    api.nextRound.mockRejectedValue(new ApiError('game not found', 404))
+
+    await game.startNextRound()
+
+    expect(game.gameCode.value).toBe('')
+    expect(notify).toHaveBeenCalledWith('This game has ended.', 'error')
   })
 })
 

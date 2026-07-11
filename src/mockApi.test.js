@@ -138,7 +138,7 @@ describe('one submission per round', () => {
     expect(second.status).toBe(409)
   })
 
-  it('advances to the next prompt once everyone has answered', async () => {
+  it('the poll never advances the round on its own', async () => {
     const api = await freshApi()
     await api('POST', `/games/${CODE}/players`, { id: '1' })
     const before = await (await api('GET', `/games/${CODE}/round`)).json()
@@ -146,12 +146,51 @@ describe('one submission per round', () => {
 
     await api('POST', `/games/${CODE}/submit`, { id: '1', note: [words[0]] })
 
-    // The next round poll advances (the sole player has answered).
+    // Even with everyone answered, the round waits for an explicit advance.
     const after = await (await api('GET', `/games/${CODE}/round`)).json()
-    expect(after.round).toBe(before.round + 1)
+    expect(after.round).toBe(before.round)
+  })
+})
+
+describe('POST /games/:code/rounds (player-driven next round)', () => {
+  it('advances to a fresh prompt and re-opens submitting', async () => {
+    const api = await freshApi()
+    await api('POST', `/games/${CODE}/players`, { id: '1' })
+    const before = await (await api('GET', `/games/${CODE}/round`)).json()
+    const { words } = await (await api('POST', `/games/${CODE}/draw`, { id: '1', count: 2 })).json()
+    await api('POST', `/games/${CODE}/submit`, { id: '1', note: [words[0]] })
+
+    const res = await api('POST', `/games/${CODE}/rounds`, { id: '1', round: before.round })
+    expect(res.status).toBe(201)
+    const state = await res.json()
+    expect(state.round).toBe(before.round + 1)
+    expect(state.prompt.length).toBeGreaterThan(0)
+    expect(state.count).toBe(0)
+
     // Submitting is possible again in the new round.
     const again = await api('POST', `/games/${CODE}/submit`, { id: '1', note: [words[1]] })
     expect(again.ok).toBe(true)
+  })
+
+  it('409s a stale round instead of skipping a prompt', async () => {
+    const api = await freshApi()
+    await api('POST', `/games/${CODE}/players`, { id: '1' })
+    const before = await (await api('GET', `/games/${CODE}/round`)).json()
+
+    await api('POST', `/games/${CODE}/rounds`, { id: '1', round: before.round })
+    // A second tap still citing the old round loses the race.
+    const stale = await api('POST', `/games/${CODE}/rounds`, { id: '1', round: before.round })
+    expect(stale.status).toBe(409)
+
+    const after = await (await api('GET', `/games/${CODE}/round`)).json()
+    expect(after.round).toBe(before.round + 1)
+  })
+
+  it('rejects a player who has not joined', async () => {
+    const api = await freshApi()
+    const before = await (await api('GET', `/games/${CODE}/round`)).json()
+    const res = await api('POST', `/games/${CODE}/rounds`, { id: 'ghost', round: before.round })
+    expect(res.ok).toBe(false)
   })
 })
 

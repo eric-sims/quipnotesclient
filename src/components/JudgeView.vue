@@ -22,7 +22,8 @@
     <!-- Judging: flip each card, read it to the room, pick one. -->
     <template v-else>
       <p v-if="winnerId" class="judge__lede">
-        You picked {{ winnerId }}'s note — draw the next prompt when ready.
+        You picked {{ winnerId }}'s note — start the next round when everyone's
+        ready.
       </p>
       <p v-else class="judge__lede">
         Tap a card to flip it and read it aloud — the host screen flips with
@@ -39,6 +40,18 @@
           @pick="$emit('pick', $event)"
         />
       </div>
+
+      <!-- After the pick, the judge moves the game along — the host screen
+           can be left alone. -->
+      <button
+        v-if="canAdvance"
+        type="button"
+        class="game-btn game-btn--primary"
+        :disabled="advancing"
+        @click="$emit('next')"
+      >
+        {{ advancing ? 'Starting…' : 'Next round' }}
+      </button>
     </template>
   </section>
 </template>
@@ -78,8 +91,18 @@ export default {
       type: String,
       default: '',
     },
+    // Whether this judge may start the next round (true once they've picked),
+    // and whether that request is in flight.
+    canAdvance: {
+      type: Boolean,
+      default: false,
+    },
+    advancing: {
+      type: Boolean,
+      default: false,
+    },
   },
-  emits: ['force', 'flip', 'pick'],
+  emits: ['force', 'flip', 'pick', 'next'],
 };
 </script>
 
@@ -123,5 +146,14 @@ export default {
   flex-direction: column;
   gap: var(--space-3);
   width: 100%;
+}
+
+/* .game-btn's flex-basis is meant for the row layouts of the play surface; in
+   this column it would become a 160px *height*, so pin the buttons here to
+   their natural size. */
+.judge .game-btn {
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 240px;
 }
 </style>

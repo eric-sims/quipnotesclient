@@ -7,9 +7,10 @@
 // auto-created the first time any 4-digit code is looked up or joined — that
 // keeps offline play (join -> draw -> submit) meaningful. For the same reason a
 // game auto-starts a round with a random prompt on first contact (there is no
-// host to draw one); once every joined player has answered, the next round poll
-// advances to a fresh prompt so solo offline play keeps flowing. State is
-// persisted to localStorage so it survives page reloads.
+// host to draw one); after answering, the player advances to the next prompt
+// themselves via POST /rounds (the same next-round endpoint the server offers
+// phones, with its stale-round 409 guard) so solo offline play keeps flowing.
+// State is persisted to localStorage so it survives page reloads.
 
 import { BREAK_TILE } from "./tiles.js";
 
@@ -171,12 +172,27 @@ function ensureGame(code) {
 }
 
 // Advance to the next prompt: a new round, cleared submissions and notes.
-// Offline has no host, so a successful submit triggers this to keep play moving.
+// Offline has no host, so the player drives this via POST /rounds.
 function advanceRound(game) {
   game.round += 1;
   game.prompt = randomPrompt();
   game.submitted = new Set();
   game.submittedNotes = [];
+}
+
+// The wire RoundState for GET /round and the POST /rounds response. Offline
+// rounds are judge-less, so the judging fields always carry their zero shape.
+function roundState(game) {
+  return {
+    round: game.round,
+    prompt: game.prompt,
+    judgeId: "",
+    judgingOpen: false,
+    count: game.submitted.size,
+    total: game.players.size,
+    favoriteNoteId: 0,
+    winnerId: "",
+  };
 }
 
 function ensurePlayer(game, id) {
@@ -210,6 +226,7 @@ const TILES_RE = /^\/games\/(\d{4})\/players\/([^/]+)\/tiles$/;
 const DRAW_RE = /^\/games\/(\d{4})\/draw$/;
 const SUBMIT_RE = /^\/games\/(\d{4})\/submit$/;
 const ROUND_RE = /^\/games\/(\d{4})\/round$/;
+const ROUNDS_RE = /^\/games\/(\d{4})\/rounds$/;
 
 // Drop-in replacement for api.js#rawRequest's network call.
 export async function mockApiRequest(method, url, body = null) {
@@ -243,31 +260,36 @@ export async function mockApiRequest(method, url, body = null) {
     return jsonResponse({ words: [...player.tiles] });
   }
 
-  // Current round. Offline has no host, so once every joined player has answered
-  // we auto-advance to the next prompt here to keep solo play flowing. Offline
-  // rounds are always judge-less (there's no room of players to judge), so the
-  // judging fields mirror the server's judge-less shape: play works exactly as
-  // it did before judging existed, and judge mode never activates offline.
+  // Current round. Offline rounds are always judge-less (there's no room of
+  // players to judge), so the judging fields mirror the server's judge-less
+  // shape: play works exactly as it did before judging existed, and judge mode
+  // never activates offline.
   if (method === "GET" && (m = url.match(ROUND_RE))) {
     const game = ensureGame(m[1]);
-    if (
-      game.round > 0 &&
-      game.players.size > 0 &&
-      game.submitted.size >= game.players.size
-    ) {
-      advanceRound(game);
-    }
     save();
-    return jsonResponse({
-      round: game.round,
-      prompt: game.prompt,
-      judgeId: "",
-      judgingOpen: false,
-      count: game.submitted.size,
-      total: game.players.size,
-      favoriteNoteId: 0,
-      winnerId: "",
-    });
+    return jsonResponse(roundState(game));
+  }
+
+  // Advance to the next prompt (the player-driven POST /rounds). Mirrors the
+  // server's AdvanceRound guards: the caller must have joined and cite the
+  // round they're advancing from (a stale value 409s instead of skipping a
+  // prompt). Offline rounds are judge-less, so any joined player may advance —
+  // the judge-only rule never applies here.
+  if (method === "POST" && (m = url.match(ROUNDS_RE))) {
+    const game = ensureGame(m[1]);
+    const id = String((body && body.id) || "");
+    if (!game.players.has(id)) {
+      return jsonResponse({ error: `player ${id} not found` }, 500);
+    }
+    if (Number(body.round) !== game.round) {
+      return jsonResponse(
+        { error: "the next round has already started" },
+        409
+      );
+    }
+    advanceRound(game);
+    save();
+    return jsonResponse(roundState(game), 201);
   }
 
   // Submit a note.
