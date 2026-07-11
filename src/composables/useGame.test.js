@@ -403,7 +403,7 @@ describe('rounds', () => {
     await game.submit()
 
     expect(api.submit).not.toHaveBeenCalled()
-    expect(notify).toHaveBeenCalledWith(expect.stringContaining('draw a prompt'), 'error')
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('first round'), 'error')
   })
 
   it('refuses a second submission in the same round', async () => {
