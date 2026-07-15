@@ -130,7 +130,7 @@ describe('joining a game', () => {
     expect(api.joinGame).toHaveBeenCalledWith('1234', 'p1')
     expect(game.gameCode.value).toBe('1234')
     expect(window.localStorage.getItem('quipnotes.gameCode')).toBe('1234')
-    expect(game.pool.value).toEqual([{ id: '7', word: 'robot' }])
+    expect(game.pool.value).toEqual([{ id: '7', word: 'robot', pos: ['other'] }])
   })
 
   it('reports a clear error for an unknown code', async () => {
@@ -182,12 +182,17 @@ describe('drawing', () => {
   })
 
   it('populates the pool from the drawn tiles', async () => {
-    api.draw.mockResolvedValue({ words: ['1|the', '2|secret'] })
+    api.draw.mockResolvedValue({
+      words: ['1|the', '2|secret'],
+      pos: { '2|secret': ['noun', 'adjective'] },
+    })
     const game = joinedGame()
     await game.draw()
     expect(game.pool.value).toEqual([
-      { id: '1', word: 'the' },
-      { id: '2', word: 'secret' },
+      // "1|the" is missing from the pos map (e.g. an older server), so it
+      // defaults to "other".
+      { id: '1', word: 'the', pos: ['other'] },
+      { id: '2', word: 'secret', pos: ['noun', 'adjective'] },
     ])
   })
 
@@ -323,7 +328,7 @@ describe('submitting', () => {
 
     expect(api.submit).toHaveBeenCalledWith('1234', 'p1', ['1|the'])
     expect(game.noteTiles.value).toEqual([])
-    expect(game.pool.value).toEqual([{ id: '2', word: 'secret' }])
+    expect(game.pool.value).toEqual([{ id: '2', word: 'secret', pos: ['other'] }])
     expect(notify).toHaveBeenCalledWith(expect.stringContaining('submitted'), 'success')
   })
 

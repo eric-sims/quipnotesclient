@@ -80,10 +80,16 @@ DOM:
 - **`src/mockApi.js`** — the in-memory offline backend, persisted to `localStorage`
   (key `quipnotes.mock.v2`); mirrors the server's contract.
 - **`src/tiles.js`** — parses the `"<id>|<word>"` tile wire format (and the `"\n"` break
-  token) at the boundary so raw strings never leak into views.
-- **`src/components/`** — presentational only. Judge mode swaps the writing surface for
-  `JudgeView.vue` (waiting screen → face-down board → "Next round"), and `ConfettiBurst.vue`
-  is the pure-CSS winner confetti.
+  token) at the boundary so raw strings never leak into views. Also owns the
+  part-of-speech vocabulary: the draw/tiles responses carry a `pos` map (tile key →
+  tags, a word can have several), normalized here (`normalizePos`, unknown/missing →
+  `"other"`) and grouped for the tabbed browse view (`groupTilesByPos`, with a label and
+  a plain-English definition per part of speech).
+- **`src/components/`** — presentational only. `PosTabs.vue` is the "Sort by type" view:
+  a horizontally-scrollable tab per non-empty part of speech (count badge + definition
+  line) wrapping the same `TileContainer` pile, toggled from a button next to Draw. Judge
+  mode swaps the writing surface for `JudgeView.vue` (waiting screen → face-down board →
+  "Next round"), and `ConfettiBurst.vue` is the pure-CSS winner confetti.
 
 The player, manager, and server all speak the same wire protocol; keep `mockApi.js` in sync
 with the server whenever an endpoint changes.

@@ -33,7 +33,8 @@ const WORD_GROUPS = {
     "forbidden", "tiny", "enormous", "suspicious", "haunted", "golden",
   ],
   adverbs: ["quietly", "loudly", "now", "never", "always", "tonight", "slowly"],
-  connectors: ["and", "or", "but", "before", "after", "until", "because", "into"],
+  conjunctions: ["and", "or", "but", "because"],
+  prepositions: ["into", "before", "after", "until"],
 };
 
 // Flatten into a weighted draw pool: glue words appear more often so notes
@@ -45,8 +46,52 @@ const WORD_BANK = [
   ...WORD_GROUPS.nouns, ...WORD_GROUPS.nouns,
   ...WORD_GROUPS.adjectives,
   ...WORD_GROUPS.adverbs,
-  ...WORD_GROUPS.connectors, ...WORD_GROUPS.connectors,
+  ...WORD_GROUPS.conjunctions, ...WORD_GROUPS.conjunctions,
+  ...WORD_GROUPS.prepositions, ...WORD_GROUPS.prepositions,
 ];
+
+// Map each group to its standard part-of-speech tag (the server's words.txt
+// tags). Articles aren't one of the nine tabs, so they land in "other".
+const GROUP_POS = {
+  articles: "other",
+  pronouns: "pronoun",
+  verbs: "verb",
+  nouns: "noun",
+  adjectives: "adjective",
+  adverbs: "adverb",
+  conjunctions: "conjunction",
+  prepositions: "preposition",
+};
+
+// word -> [tags], merging words that sit in several groups ("secret" is both
+// a noun and an adjective). "before"/"after"/"until" double as conjunctions so
+// offline play exercises the multi-POS tabs, like the real word bank does.
+const WORD_POS = (() => {
+  const pos = new Map();
+  for (const [group, words] of Object.entries(WORD_GROUPS)) {
+    for (const word of words) {
+      const tags = pos.get(word) || [];
+      if (!tags.includes(GROUP_POS[group])) tags.push(GROUP_POS[group]);
+      pos.set(word, tags);
+    }
+  }
+  for (const word of ["before", "after", "until"]) {
+    pos.get(word).push("conjunction");
+  }
+  return pos;
+})();
+
+// Build the wire's pos map for a set of tiles, keyed by the full
+// "<id>|<word>" token exactly like the server's draw/tiles responses.
+// Exported for tests.
+export function posFor(tiles) {
+  const pos = {};
+  for (const tile of tiles) {
+    const word = tile.slice(tile.indexOf("|") + 1);
+    if (WORD_POS.has(word)) pos[tile] = [...WORD_POS.get(word)];
+  }
+  return pos;
+}
 
 // A small built-in prompt bank so offline play has prompts to reference.
 const PROMPT_BANK = [
@@ -257,7 +302,7 @@ export async function mockApiRequest(method, url, body = null) {
       player.tiles.push(makeTile());
     }
     save();
-    return jsonResponse({ words: [...player.tiles] });
+    return jsonResponse({ words: [...player.tiles], pos: posFor(player.tiles) });
   }
 
   // Current round. Offline rounds are always judge-less (there's no room of
@@ -327,7 +372,7 @@ export async function mockApiRequest(method, url, body = null) {
   if (method === "GET" && (m = url.match(TILES_RE))) {
     const game = ensureGame(m[1]);
     const player = ensurePlayer(game, m[2]);
-    return jsonResponse({ words: [...player.tiles] });
+    return jsonResponse({ words: [...player.tiles], pos: posFor(player.tiles) });
   }
 
   console.warn(`[mockApi] unhandled ${method} ${url}`);
