@@ -52,6 +52,13 @@
           >
             {{ isDrawing ? 'Drawing…' : 'Draw' }}
           </button>
+          <button
+            class="game-btn game-btn--ghost"
+            :aria-pressed="browseByPos"
+            @click="browseByPos = !browseByPos"
+          >
+            {{ browseByPos ? 'Show all' : 'Sort by type' }}
+          </button>
         </div>
 
         <p v-if="round === 0" class="pool-meta">
@@ -82,7 +89,13 @@
           </button>
         </div>
 
-        <TileContainer :tiles="pool" :used-ids="usedIds" @add="addToNote" />
+        <PosTabs
+          v-if="browseByPos"
+          :tiles="pool"
+          :used-ids="usedIds"
+          @add="addToNote"
+        />
+        <TileContainer v-else :tiles="pool" :used-ids="usedIds" @add="addToNote" />
 
         <NoteTray
           :tiles="noteTiles"
@@ -117,6 +130,7 @@
 <script>
 import { onMounted, onUnmounted, computed, ref, watch } from 'vue';
 import TileContainer from './components/TileContainer.vue';
+import PosTabs from './components/PosTabs.vue';
 import Onboarding from './components/OnboardingScreen.vue';
 import GameBar from './components/GameBar.vue';
 import NoteTray from './components/NoteTray.vue';
@@ -137,6 +151,7 @@ export default {
   name: 'App',
   components: {
     TileContainer,
+    PosTabs,
     Onboarding,
     GameBar,
     NoteTray,
@@ -149,6 +164,10 @@ export default {
     const { toasts, notify, dismiss } = useToasts();
     const game = useGame({ notify });
     const flash = ref(false);
+
+    // Pool view: the classic jumbled pile, or tiles grouped into
+    // part-of-speech tabs (a purely local presentation toggle).
+    const browseByPos = ref(false);
 
     // The play surface is unlocked only once both identity and game are set.
     const inGame = computed(() => !!game.playerID.value && !!game.gameCode.value);
@@ -238,6 +257,7 @@ export default {
       toasts,
       dismiss,
       flash,
+      browseByPos,
       inGame,
       initialCode,
       submitLabel,

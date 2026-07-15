@@ -65,6 +65,27 @@ describe('POST /games/:code/draw', () => {
     expect(new Set(ids).size).toBe(words.length)
   })
 
+  it('tags every tile with parts of speech from the nine standard tags', async () => {
+    const api = await freshApi()
+    const KNOWN = [
+      'noun', 'verb', 'adjective', 'adverb', 'pronoun',
+      'preposition', 'conjunction', 'interjection', 'other',
+    ]
+    const { words, pos } = await (await api('POST', `/games/${CODE}/draw`, { id: '1', count: 12 })).json()
+    for (const tile of words) {
+      expect(pos[tile]).toBeDefined()
+      expect(pos[tile].length).toBeGreaterThan(0)
+      for (const tag of pos[tile]) expect(KNOWN).toContain(tag)
+    }
+  })
+
+  it('gives multi-POS words all their tags (e.g. "before")', async () => {
+    // posFor derives tags from the word, so any tile key works.
+    const { posFor } = await import('./mockApi.js')
+    expect(posFor(['1|before'])).toEqual({ '1|before': ['preposition', 'conjunction'] })
+    expect(posFor(['2|secret'])).toEqual({ '2|secret': ['noun', 'adjective'] })
+  })
+
   it('draws nothing when count is missing or invalid', async () => {
     const api = await freshApi()
     const { words } = await (await api('POST', `/games/${CODE}/draw`, { id: '1' })).json()
@@ -106,6 +127,7 @@ describe('GET /games/:code/players/:id/tiles', () => {
     const drawn = await (await api('POST', `/games/${CODE}/draw`, { id: '7', count: 4 })).json()
     const fetched = await (await api('GET', `/games/${CODE}/players/7/tiles`)).json()
     expect(fetched.words).toEqual(drawn.words)
+    expect(fetched.pos).toEqual(drawn.pos)
   })
 
   it('returns an empty set for an unknown player', async () => {

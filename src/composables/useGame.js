@@ -1,6 +1,13 @@
 import { ref, computed } from 'vue';
 import { api, ApiError } from '../api.js';
-import { parseTile, formatTile, BREAK_TILE, isBreakId, newBreakId } from '../tiles.js';
+import {
+  parseTile,
+  formatTile,
+  normalizePos,
+  BREAK_TILE,
+  isBreakId,
+  newBreakId,
+} from '../tiles.js';
 
 // Persist the Player ID and the joined game code so a refresh doesn't drop the
 // session (the mock already persists tiles).
@@ -124,8 +131,13 @@ export function useGame({ notify = () => {} } = {}) {
     () => pool.value.filter((t) => !usedIds.value.has(t.id)).length
   );
 
-  function setPool(rawTiles) {
-    pool.value = (rawTiles || []).map(parseTile);
+  function setPool(rawTiles, posMap) {
+    pool.value = (rawTiles || []).map((raw) => ({
+      ...parseTile(raw),
+      // The wire's pos map is keyed by the raw "<id>|<word>" token; a tile it
+      // doesn't know (or an older server with no map) counts as "other".
+      pos: normalizePos(posMap && posMap[raw]),
+    }));
     // Drop any note ids whose tiles no longer exist (e.g. after a submit), but
     // keep break ids — they aren't tiles and belong to the note layout.
     const live = new Set(pool.value.map((t) => t.id));
@@ -388,7 +400,7 @@ export function useGame({ notify = () => {} } = {}) {
     if (!playerID.value || !gameCode.value) return;
     try {
       const data = await api.getTiles(gameCode.value, playerID.value);
-      setPool(data && data.words);
+      setPool(data && data.words, data && data.pos);
     } catch (error) {
       handleGameError(error, { silent });
     }
@@ -448,7 +460,7 @@ export function useGame({ notify = () => {} } = {}) {
     try {
       const count = randomDrawCount();
       const data = await api.draw(gameCode.value, playerID.value, count);
-      setPool(data && data.words);
+      setPool(data && data.words, data && data.pos);
       notify(`Drew ${count} tiles.`, 'success');
     } catch (error) {
       handleGameError(error);
