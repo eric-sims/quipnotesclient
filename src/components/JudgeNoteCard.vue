@@ -153,7 +153,10 @@ export default {
 .judge-card__note {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  /* Clusters sit clearly apart so a line break reads as a distinct expression,
+     not just another wrapped row within a long cluster (matches the host's
+     NoteSlate). */
+  gap: var(--space-6);
   align-items: center;
   width: 100%;
 }
