@@ -8,7 +8,7 @@
       class="judge-card__cover"
       @click="$emit('flip', note.id)"
     >
-      <span class="judge-card__hint">Tap to flip</span>
+      <span class="judge-card__hint">Tap to reveal</span>
     </button>
 
     <!-- Face-up: the note as word tiles, one row per cluster, plus the pick
