@@ -279,6 +279,7 @@ export default {
   --space-3: 12px;
   --space-4: 16px;
   --space-5: 24px;
+  --space-6: 40px;
 
   /* --- Radius & shadow --- */
   --radius-sm: 6px;
