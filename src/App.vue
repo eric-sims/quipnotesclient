@@ -314,7 +314,7 @@ export default {
   --color-toast-text: #f7f4ee;
 }
 
-@media (prefers-color-scheme: dark) {
+/* @media (prefers-color-scheme: dark) {
   :root {
     --color-bg: #1b1a17;
     --color-surface: #262420;
@@ -336,7 +336,7 @@ export default {
     --color-toast-bg: #f3ecdd;
     --color-toast-text: #1b1a17;
   }
-}
+} */
 
 * {
   box-sizing: border-box;

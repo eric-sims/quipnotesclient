@@ -21,7 +21,7 @@ tasteful nod to the cut-out / magnet-tile ransom-note vibe. Mobile-first.
 - **[now] P2** Responsive, mobile-first layout: fluid buttons (not fixed 200px),
   sensible breakpoints, tile pool and note tray stack cleanly on phones.
 - **[now] P3** Light/dark friendly palette via tokens; respect
-  `prefers-color-scheme`.
+  `prefers-color-scheme`. (Commented out for now because the author doesn't like the color scheme.)
 - **[now] P3** Polish: focus-visible outlines, hover/active transitions, an empty
   state for the tile pool before the first draw.
 
