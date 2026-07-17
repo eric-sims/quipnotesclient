@@ -43,6 +43,28 @@ describe('POST /games/:code/players', () => {
   })
 })
 
+describe('DELETE /games/:code/players/:id', () => {
+  it('removes the player from the roster', async () => {
+    const api = await freshApi()
+    await api('POST', `/games/${CODE}/players`, { id: '42' })
+    await api('POST', `/games/${CODE}/players`, { id: '7' })
+
+    const res = await api('DELETE', `/games/${CODE}/players/42`)
+    expect(res.ok).toBe(true)
+
+    const { players } = await (await api('GET', `/games/${CODE}`)).json()
+    expect(players).toEqual(['7'])
+  })
+
+  it('500s when the player is not in the game', async () => {
+    const api = await freshApi()
+    await api('GET', `/games/${CODE}`) // ensure the game exists
+    const res = await api('DELETE', `/games/${CODE}/players/nobody`)
+    expect(res.status).toBe(500)
+    expect(res.ok).toBe(false)
+  })
+})
+
 describe('POST /games/:code/draw', () => {
   it('appends N tiles and returns the full set', async () => {
     const api = await freshApi()
