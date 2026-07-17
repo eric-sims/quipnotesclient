@@ -15,6 +15,7 @@ vi.mock('../api.js', () => {
     api: {
       getGame: vi.fn(),
       joinGame: vi.fn(),
+      leaveGame: vi.fn(),
       draw: vi.fn(),
       submit: vi.fn(),
       getTiles: vi.fn(),
@@ -35,6 +36,7 @@ beforeEach(() => {
   window.localStorage.clear()
   api.getGame.mockReset().mockResolvedValue({ code: '1234', players: [] })
   api.joinGame.mockReset().mockResolvedValue({ id: 'p1' })
+  api.leaveGame.mockReset().mockResolvedValue(null)
   api.draw.mockReset().mockResolvedValue({ words: [] })
   api.submit.mockReset().mockResolvedValue({ ok: true })
   api.getTiles.mockReset().mockResolvedValue({ words: [] })
@@ -745,6 +747,31 @@ describe('judging', () => {
     expect(game.judgeId.value).toBe('')
     expect(game.judgingOpen.value).toBe(false)
     expect(game.judgeNotes.value).toEqual([])
+  })
+})
+
+describe('leaving a game', () => {
+  it('tells the server to remove the player so the host roster drops them', () => {
+    const game = joinedGame(vi.fn())
+    game.leaveGame()
+    expect(api.leaveGame).toHaveBeenCalledWith('1234', 'p1')
+  })
+
+  it('returns to the join screen even if the leave call fails', async () => {
+    api.leaveGame.mockRejectedValueOnce(new ApiError('Cannot reach the server', 0))
+    const game = joinedGame(vi.fn())
+    game.leaveGame()
+    // Local state is cleared synchronously, regardless of the server call.
+    expect(game.gameCode.value).toBe('')
+    // Let the rejected best-effort call settle without an unhandled rejection.
+    await Promise.resolve()
+  })
+
+  it('does not call the server when not in a game', () => {
+    const game = useGame(vi.fn())
+    game.playerID.value = 'p1'
+    game.leaveGame()
+    expect(api.leaveGame).not.toHaveBeenCalled()
   })
 })
 

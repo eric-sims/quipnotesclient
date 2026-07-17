@@ -267,6 +267,7 @@ function jsonResponse(data, status = 200) {
 
 const GAME_RE = /^\/games\/(\d{4})$/;
 const PLAYERS_RE = /^\/games\/(\d{4})\/players$/;
+const PLAYER_RE = /^\/games\/(\d{4})\/players\/([^/]+)$/;
 const TILES_RE = /^\/games\/(\d{4})\/players\/([^/]+)\/tiles$/;
 const DRAW_RE = /^\/games\/(\d{4})\/draw$/;
 const SUBMIT_RE = /^\/games\/(\d{4})\/submit$/;
@@ -291,6 +292,24 @@ export async function mockApiRequest(method, url, body = null) {
     ensurePlayer(game, String(body.id));
     save();
     return jsonResponse({ id: body.id }, 201);
+  }
+
+  // Leave a game: drop the player from the roster (and this round's submitted
+  // set) so the host would stop showing them. Mirrors the server's
+  // RemovePlayer, minus the judge reassignment offline rounds never have.
+  if (method === "DELETE" && (m = url.match(PLAYER_RE))) {
+    const game = ensureGame(m[1]);
+    const id = String(m[2]);
+    if (!game.players.has(id)) {
+      return jsonResponse(
+        { error: "cannot remove player. id does not exist" },
+        500
+      );
+    }
+    game.players.delete(id);
+    game.submitted.delete(id);
+    save();
+    return jsonResponse(null);
   }
 
   // Draw tiles.

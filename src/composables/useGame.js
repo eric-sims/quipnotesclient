@@ -449,8 +449,18 @@ export function useGame({ notify = () => {} } = {}) {
     }
   }
 
-  // Leave the current game locally and return to the join screen.
+  // Leave the current game: tell the server so the host's roster drops us,
+  // then clear local state and return to the join screen. The server call is
+  // best-effort — we leave locally regardless of whether it succeeds (an
+  // unreachable server or an already-removed player shouldn't strand us here).
   function leaveGame() {
+    const code = gameCode.value;
+    const id = playerID.value;
+    if (code && id) {
+      Promise.resolve(api.leaveGame(code, id)).catch(() => {
+        // Non-fatal: we're leaving locally anyway.
+      });
+    }
     clearGameState();
   }
 

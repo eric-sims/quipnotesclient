@@ -70,6 +70,10 @@ export const api = {
   getGame: (code) => request('GET', `/games/${code}`),
   joinGame: (code, id) =>
     request('POST', `/games/${code}/players`, { id: String(id) }),
+  // Leave the game: removes the player from the server's roster so the host's
+  // scoreboard drops them (the server broadcasts the updated `players` roster).
+  leaveGame: (code, id) =>
+    request('DELETE', `/games/${code}/players/${id}`),
   draw: (code, id, count) =>
     request('POST', `/games/${code}/draw`, { id: String(id), count }),
   submit: (code, id, note) =>
